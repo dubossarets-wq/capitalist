@@ -37,7 +37,7 @@ export function GameOver() {
             <div className="title-font" style={{ fontSize: '1.8rem' }}>{iWon ? 'Вы победили!' : `${winner.name} побеждает!`}</div>
           </div>
           <div className="hint">
-            {s.turn} ходов · {s.round} кругов · {mins} мин
+            {plural(s.turn, 'ход', 'хода', 'ходов')} · {plural(s.round, 'круг', 'круга', 'кругов')} · {mins} мин
           </div>
         </div>
       )}
@@ -47,10 +47,10 @@ export function GameOver() {
           <tr>
             <th>Место</th>
             <th>Капитал</th>
-            <th>Участков</th>
-            <th>Аренда +</th>
-            <th className="opt">Аренда −</th>
-            <th className="opt">Сделок</th>
+            <th title="Сколько участков у игрока">Участки</th>
+            <th title="Получено аренды">Доход</th>
+            <th className="opt" title="Заплачено аренды">Расход</th>
+            <th className="opt">Сделки</th>
           </tr>
         </thead>
         <tbody>
@@ -60,8 +60,10 @@ export function GameOver() {
                 <span className="row" style={{ gap: '0.4rem' }}>
                   <span className="gold-text">{k + 1}</span>
                   <Avatar id={p.avatar} color={p.color} size={1.6} bot={p.isBot} />
-                  {p.name}
-                  {p.bankrupt && <span className="tag red">банкрот</span>}
+                  <span className="stats-name">
+                    {p.name}
+                    {p.bankrupt && <small>банкрот</small>}
+                  </span>
                 </span>
               </td>
               <td>{money(p.bankrupt ? p.stats.maxNetWorth : netWorth(s, p.id))}</td>
@@ -223,4 +225,12 @@ export function PauseMenu() {
       )}
     </Modal>
   );
+}
+
+/** Правильное окончание: 1 ход, 2 хода, 5 ходов */
+function plural(n: number, one: string, few: string, many: string) {
+  const m10 = n % 10;
+  const m100 = n % 100;
+  const w = m10 === 1 && m100 !== 11 ? one : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? few : many;
+  return `${n} ${w}`;
 }

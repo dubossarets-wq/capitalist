@@ -110,7 +110,7 @@ async function main() {
 
     // Играем; посреди партии гость 1 перезагружает страницу
     let reloaded = false;
-    const end = Date.now() + 150000;
+    const end = Date.now() + 360000; // между действиями пауза не меньше секунды — партия длиннее
     while (Date.now() < end) {
       for (const d of [host, g1, g2]) await playStep(d.page).catch(() => {});
       const s = await snapshot(host.page);

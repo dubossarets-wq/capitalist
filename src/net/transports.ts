@@ -6,7 +6,8 @@ import type { Sock } from '../../shared/roomCore';
 export interface TransportHandlers {
   onOpen(): void;
   onMessage(data: string): void;
-  onClose(reason?: string): void;
+  /** fatal — восстановить соединение само не получится (комната не найдена и т.п.) */
+  onClose(reason?: string, fatal?: boolean): void;
 }
 
 export interface Transport {

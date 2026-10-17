@@ -38,8 +38,9 @@ export async function joinByCode(code: string) {
   }
   net.use('guest', () => new P2PGuestTransport(c));
   lsSet(GUEST_KEY, c);
-  await net.connect();
+  // Запрос входа уйдёт сразу после приветствия и повторится, если связь пересоздастся
   net.joinRoom(c);
+  await net.connect();
 }
 
 /** Подключение без интернета по QR-коду хозяина; onAnswer — ответный код, который нужно показать хозяину */
@@ -49,8 +50,8 @@ export async function joinOffline(text: string, onAnswer: (code: string) => void
   const t = new RtcGuestTransport(data, onAnswer);
   net.use('guest', () => t);
   lsSet(GUEST_KEY, '');
-  await net.connect();
   if (data.c) net.joinRoom(data.c);
+  await net.connect();
 }
 
 /** Что делать с отсканированным QR-кодом: ссылка с кодом комнаты или код для подключения без интернета */

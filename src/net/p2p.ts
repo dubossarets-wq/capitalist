@@ -206,6 +206,7 @@ export class P2PGuestTransport implements Transport {
         navigator.onLine === false
           ? 'Нет интернета для подключения по коду. Попросите хозяина показать QR для подключения без интернета.'
           : `Комната ${this.code} не найдена. Проверьте код и что хозяин держит игру открытой.`,
+        true,
       );
     }, 20000);
   }
@@ -233,7 +234,7 @@ export class P2PGuestTransport implements Transport {
       this.hostPeer = null;
       if (this.opened) {
         this.opened = false;
-        this.h?.onClose('Связь с хозяином комнаты потеряна');
+        this.h?.onClose('Связь с хозяином комнаты потеряна', false);
       }
     };
   }
@@ -275,7 +276,7 @@ export class RtcGuestTransport implements Transport {
   open(h: TransportHandlers) {
     if (this.used) {
       // Прямое соединение без интернета нельзя восстановить само — нужен новый обмен QR
-      queueMicrotask(() => h.onClose('Связь потеряна. Попросите хозяина показать новый QR и отсканируйте его.'));
+      queueMicrotask(() => h.onClose('Связь потеряна. Попросите хозяина показать новый QR и отсканируйте его.', true));
       return;
     }
     this.used = true;
@@ -295,7 +296,7 @@ export class RtcGuestTransport implements Transport {
         await gathered(pc);
         this.onAnswer(await pack({ k: 'A', s: pc.localDescription!.sdp }));
       } catch {
-        h.onClose('QR-код хозяина повреждён или устарел');
+        h.onClose('QR-код хозяина повреждён или устарел', true);
       }
     })();
   }

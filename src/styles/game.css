@@ -933,7 +933,7 @@ select {
   gap: 0.55rem;
   padding: 0.42rem 0.6rem 0.42rem 0.45rem;
   border-radius: 1.2rem;
-  background: linear-gradient(90deg, rgba(40, 20, 120, 0.92), rgba(70, 40, 170, 0.85));
+  background: linear-gradient(90deg, rgb(40, 20, 120), rgb(66, 38, 160));
   box-shadow: 0 0 0 0.16rem rgba(20, 8, 70, 0.9), inset 0 0.1rem 0 rgba(255, 255, 255, 0.25), 0 0.3rem 0.6rem rgba(0, 0, 0, 0.3);
   transition: transform 0.3s cubic-bezier(0.3, 1.6, 0.5, 1), box-shadow 0.3s;
   cursor: pointer;
@@ -957,7 +957,7 @@ select {
 .player-card > * { position: relative; }
 
 .player-card.active {
-  transform: translateX(0.5rem);
+  transform: none;
   box-shadow: 0 0 0 0.18rem var(--c), 0 0 1.2rem var(--c), inset 0 0.1rem 0 rgba(255, 255, 255, 0.3);
 }
 
@@ -1681,3 +1681,8 @@ select {
   box-shadow: 0 0 0 0.25rem #ffd23f, 0 0 0 100vmax rgba(0, 0, 0, 0.35);
   animation: urgentLeft 1.6s ease-in-out infinite;
 }
+
+/* Таблица итогов: имя без переноса, отметка о банкротстве — под ним */
+.stats-name { display: inline-flex; flex-direction: column; white-space: nowrap; line-height: 1.15; }
+.stats-name small { font-family: var(--font-text); font-weight: 700; font-size: 0.68rem; color: #ff8a8a; }
+.stats-table th { white-space: nowrap; }

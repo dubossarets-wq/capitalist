@@ -29,6 +29,8 @@ class NetClient {
   private seq = 0;
   private recorded = '';
   private afterWelcome: ClientMsg[] = [];
+  /** Код комнаты, в которую мы хотим войти: запрос повторяется после каждого переподключения */
+  private joinIntent: string | null = null;
 
   get serverAddress(): string {
     return lsGet<string>(SERVER_KEY, '') || location.host;
@@ -88,7 +90,7 @@ class NetClient {
         }
         this.onMessage(msg);
       },
-      onClose: (reason) => {
+      onClose: (reason, fatal) => {
         if (this.transport !== t) return;
         if (this.pingTimer) clearInterval(this.pingTimer);
         this.pingTimer = null;
@@ -100,7 +102,8 @@ class NetClient {
         // Сервер — переоткрываем соединение заново; хозяин по WebRTC — ждём его возвращения в той же комнате
         if (t.kind === 'server') this.transport = null;
         this.retry++;
-        if (this.waiters.length && (this.retry >= 2 || (reason && t.kind === 'guest'))) {
+        if (fatal) this.joinIntent = null;
+        if (this.waiters.length && (this.retry >= 2 || fatal)) {
           this.fail(
             reason ??
               (t.kind === 'server'
@@ -133,6 +136,7 @@ class NetClient {
 
   disconnect() {
     this.wanted = false;
+    this.joinIntent = null;
     this.retry = 0;
     if (this.retryTimer) clearTimeout(this.retryTimer);
     if (this.pingTimer) clearInterval(this.pingTimer);
@@ -169,6 +173,7 @@ class NetClient {
   }
 
   joinRoom(code: string) {
+    this.joinIntent = code;
     this.send({ t: 'joinRoom', code, profile: store().profile });
   }
 
@@ -187,6 +192,10 @@ class NetClient {
         const q = this.afterWelcome;
         this.afterWelcome = [];
         q.forEach((m) => this.raw(m));
+        // Вход ещё не состоялся (связь пересоздавалась) — просим снова
+        if (this.joinIntent && !q.some((m) => m.t === 'joinRoom') && !store().room) {
+          this.raw({ t: 'joinRoom', code: this.joinIntent, profile: store().profile });
+        }
         this.raw({ t: 'listRooms' });
         if (this.pingTimer) clearInterval(this.pingTimer);
         this.pingTimer = setInterval(() => this.raw({ t: 'ping', at: Date.now() }), 5000);
@@ -202,6 +211,7 @@ class NetClient {
         return;
       case 'room': {
         const room = msg.room;
+        if (room) this.joinIntent = null;
         st.set({ room });
         if (!room) {
           if (st.mode === 'net' && (st.screen === 'lobby' || st.screen === 'game')) {
