@@ -1,4 +1,5 @@
 // Синтезированные звуки и фоновая музыка (WebAudio). Внешние файлы не нужны.
+import { LoungeBand, BAR } from './music';
 
 type SfxName =
   | 'click'
@@ -37,6 +38,7 @@ class SoundEngine {
   private nextBar = 0;
   private bar = 0;
   private lastHover = 0;
+  private band: LoungeBand | null = null;
 
   /** Вызывается при первом касании — браузеры запрещают звук без действия пользователя */
   unlock() {
@@ -249,78 +251,11 @@ class SoundEngine {
   };
 
   private playBar(t0: number, bar: number) {
-    const ctx = this.ctx!;
-    const dest = this.musicGain!;
-    if (this.musicVol <= 0) return;
-    const chord = PROG[bar % PROG.length];
-    const beat = BAR / 4;
-    // Мягкий аккорд (электропиано)
-    chord.forEach((n, i) => {
-      [0, 2].forEach((b) => this.musicNote(midi(n + 12), t0 + b * beat + i * 0.01, beat * 1.6, 0.045, 'triangle', dest));
-    });
-    // Бас
-    const root = chord[0] - 12;
-    [0, 1.5, 2, 3].forEach((b, i) => this.musicNote(midi(root + (i === 1 ? 7 : 0)), t0 + b * beat, beat * 0.8, 0.12, 'sine', dest));
-    // Мелодия из пентатоники с повторяющейся фразой
-    const phrase = MELODY[(bar >> 1) % MELODY.length];
-    phrase.forEach(([step, len, deg]) => {
-      if (deg == null) return;
-      const n = SCALE[deg % SCALE.length] + 12 * Math.floor(deg / SCALE.length) + 72;
-      this.musicNote(midi(n), t0 + step * (beat / 2), len * (beat / 2) * 0.9, 0.05, 'square', dest, 2200);
-    });
-    // Лёгкие «тарелки»
-    for (let k = 0; k < 8; k++) {
-      const src = ctx.createBufferSource();
-      src.buffer = this.noiseBuf;
-      const f = ctx.createBiquadFilter();
-      f.type = 'highpass';
-      f.frequency.value = 8000;
-      const g = ctx.createGain();
-      const tt = t0 + k * (beat / 2);
-      g.gain.setValueAtTime(k % 2 ? 0.012 : 0.025, tt);
-      g.gain.exponentialRampToValueAtTime(0.0001, tt + 0.05);
-      src.connect(f).connect(g).connect(dest);
-      src.start(tt, Math.random() * 0.5);
-      src.stop(tt + 0.06);
-    }
-  }
-
-  private musicNote(freq: number, t: number, dur: number, vol: number, type: OscillatorType, dest: AudioNode, cutoff = 1800) {
-    const ctx = this.ctx!;
-    const o = ctx.createOscillator();
-    const f = ctx.createBiquadFilter();
-    const g = ctx.createGain();
-    o.type = type;
-    o.frequency.value = freq;
-    f.type = 'lowpass';
-    f.frequency.value = cutoff;
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(vol, t + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(f).connect(g).connect(dest);
-    o.start(t);
-    o.stop(t + dur + 0.05);
+    if (this.musicVol <= 0 || !this.ctx || !this.musicGain) return;
+    if (!this.band) this.band = new LoungeBand(this.ctx, this.musicGain);
+    this.band.playBar(t0, bar);
   }
 }
-
-const BPM = 104;
-const BAR = (60 / BPM) * 4;
-const midi = (n: number) => 440 * Math.pow(2, (n - 69) / 12);
-// I – vi – IV – V в до мажоре (корни в 4-й октаве)
-const PROG = [
-  [60, 64, 67, 71],
-  [57, 60, 64, 67],
-  [53, 57, 60, 64],
-  [55, 59, 62, 65],
-];
-const SCALE = [0, 2, 4, 7, 9]; // пентатоника
-// [шаг (восьмые), длительность (восьмые), ступень]
-const MELODY: [number, number, number | null][][] = [
-  [[0, 1, 2], [1, 1, 3], [2, 2, 4], [5, 1, 3], [6, 2, 2]],
-  [[0, 2, 4], [2, 1, 5], [3, 1, 4], [4, 2, 3], [7, 1, 2]],
-  [[1, 1, 1], [2, 1, 2], [3, 2, 3], [6, 2, 1]],
-  [[0, 3, 0], [4, 1, 2], [5, 1, 3], [6, 2, 4]],
-];
 
 export const sound = new SoundEngine();
 export type { SfxName };

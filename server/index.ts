@@ -93,7 +93,7 @@ const server = http.createServer((req, res) => {
 const manager = new RoomManager(SAVE_DIR, info);
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 512 * 1024 });
 wss.on('connection', (ws) => {
-  manager.attach(ws);
+  manager.attach(ws as any);
   // Пинг для обнаружения оборванных соединений
   (ws as any).alive = true;
   ws.on('pong', () => ((ws as any).alive = true));

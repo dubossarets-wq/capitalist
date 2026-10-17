@@ -15,10 +15,13 @@ import { BoardEditor } from './ui/screens/BoardEditor';
 import { GameScreen } from './ui/game/GameScreen';
 import { Toasts } from './ui/game/Overlays';
 import { net } from './net/netClient';
-import { STATIC_SITE } from './net/staticMode';
+import { joinByCode, resumeWifi, joinOffline } from './net/wifi';
+import { act } from './game/session';
+import { getHost } from './net/p2p';
+import { LoungeBand, BAR } from './audio/music';
 
 // Доступ для автотестов интерфейса (только чтение состояния и служебные действия)
-(window as any).__cap = { store: useStore };
+(window as any).__cap = { store: useStore, act, net, getHost, joinOffline, LoungeBand, BAR };
 
 export function App() {
   const screen = useStore((s) => s.screen);
@@ -44,7 +47,7 @@ export function App() {
           const q = store().prefs.quality;
           if (q === 'low') return;
           const next = q === 'high' ? 'medium' : 'low';
-          store().setPrefs({ quality: next, anim: next === 'low' ? 'fast' : store().prefs.anim });
+          store().setPrefs({ quality: next });
           scene.setQuality(next);
           store().toast(`Графика упрощена до «${next === 'low' ? 'Низкое' : 'Среднее'}» для плавности`, 'info');
         };
@@ -95,24 +98,17 @@ export function App() {
   }, [prefs.quality]);
 
   // Ссылка вида /?room=КОД — сразу входим в комнату
+  // Иначе, если раньше были в сетевой партии, — возвращаемся в неё автоматически.
+  // Один обработчик на оба случая: два параллельных подключения обрывали бы друг друга.
   useEffect(() => {
     const code = new URLSearchParams(location.search).get('room');
-    if (!code || STATIC_SITE) return;
+    if (!code) {
+      resumeWifi();
+      return;
+    }
     history.replaceState(null, '', location.pathname);
     store().go('join');
-    net
-      .connect()
-      .then(() => net.joinRoom(code))
-      .catch((e) => store().toast(e.message, 'error'));
-  }, []);
-
-  // Если раньше были в сетевой партии — пробуем вернуться автоматически
-  useEffect(() => {
-    try {
-      if (!STATIC_SITE && localStorage.getItem('capitalist.token.v1')) net.connect().catch(() => {});
-    } catch {
-      /* нет доступа к хранилищу */
-    }
+    joinByCode(code).catch((e) => store().toast(e.message, 'error'));
   }, []);
 
   const themeId = screen === 'game' && game ? game.settings.theme : prefs.menuTheme;

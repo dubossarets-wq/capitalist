@@ -7,7 +7,8 @@ import { net } from '../../net/netClient';
 import { toggleFullscreen } from '../fullscreen';
 import { Modal } from '../kit';
 import { Icon } from '../Icon';
-import { STATIC_SITE, REPO_URL } from '../../net/staticMode';
+import { REPO_URL } from '../../net/staticMode';
+import { createWifiRoom } from '../../net/wifi';
 
 /** Объяснение для онлайн-версии: Wi-Fi игре нужен сервер на компьютере */
 export function WifiHelp({ onClose }: { onClose: () => void }) {
@@ -44,16 +45,13 @@ export function MainMenu() {
   const go = useStore((s) => s.go);
   const [save, setSave] = useState(hasSave());
   const [busy, setBusy] = useState(false);
-  const [wifiHelp, setWifiHelp] = useState(false);
 
   useEffect(() => setSave(hasSave()), []);
 
   const createRoom = async () => {
-    if (STATIC_SITE) return setWifiHelp(true);
     setBusy(true);
     try {
-      await net.connect();
-      net.createRoom({ ...store().setupSettings, roomName: store().setupSettings.roomName || `Комната ${profile.name}` });
+      await createWifiRoom();
     } catch (e) {
       store().toast((e as Error).message, 'error');
       go('join');
@@ -90,10 +88,10 @@ export function MainMenu() {
         <GameButton color="green" size="lg" icon="robot" block pulse={!save} onClick={() => go('setup')} sub="Без интернета, до 7 ботов">
           ИГРАТЬ С БОТАМИ
         </GameButton>
-        <GameButton color="blue" size="lg" icon="wifi" block onClick={createRoom} disabled={busy} sub={busy ? 'Подключение к серверу…' : STATIC_SITE ? 'Нужен сервер на компьютере' : 'Друзья в одной Wi-Fi сети'}>
+        <GameButton color="blue" size="lg" icon="wifi" block onClick={createRoom} disabled={busy} sub={busy ? 'Создаём комнату…' : 'Друзья в одной Wi-Fi сети'}>
           СОЗДАТЬ WI-FI КОМНАТУ
         </GameButton>
-        <GameButton color="purple" size="lg" icon="join" block onClick={() => (STATIC_SITE ? setWifiHelp(true) : go('join'))} sub={STATIC_SITE ? 'Нужен сервер на компьютере' : 'По коду, списку или QR-коду'}>
+        <GameButton color="purple" size="lg" icon="join" block onClick={() => go('join')} sub="По коду или QR-коду">
           ПРИСОЕДИНИТЬСЯ К КОМНАТЕ
         </GameButton>
         <div className="row">
@@ -123,7 +121,7 @@ export function MainMenu() {
         <GameButton round color="dark" icon="upload" title="Загрузить партию из файла" onClick={loadFile} />
         <GameButton round color="dark" icon="fullscreen" title="Полный экран" onClick={toggleFullscreen} />
       </div>
-      {wifiHelp && <WifiHelp onClose={() => setWifiHelp(false)} />}
+
     </div>
   );
 }

@@ -109,7 +109,7 @@ async function main() {
       }
     } else if (await desk.isVisible('.g-btn:has-text("ЗАВЕРШИТЬ ХОД")')) {
       if (!shotProps) {
-        await desk.click('.g-btn:has-text("МОЯ НЕДВИЖИМОСТЬ")');
+        await desk.click('.g-btn:has-text("ИМУЩЕСТВО")');
         await sleep(500);
         await desk.screenshot({ path: path.join(OUT, '08-props.png') });
         await desk.click('.g-window__close .g-btn');

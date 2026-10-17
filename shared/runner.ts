@@ -55,8 +55,9 @@ export class GameRunner {
     }
     const res = applyAction(this.state, pid, action, this.now());
     if (res.ok) {
-      // После действия человека боты ждут окончания анимаций
-      this.nextBotAt = Math.max(this.nextBotAt, this.state.busyUntil);
+      // После действия человека боты ждут окончания анимаций и ещё секунду
+      const f = speedFactor(this.state);
+      this.nextBotAt = Math.max(this.nextBotAt, this.state.busyUntil + 1000 * (f < 0.1 ? f : 1));
       this.emit();
     }
     return res;
@@ -152,10 +153,10 @@ export class GameRunner {
     if (s.phase === 'auction' && s.auction) {
       for (const pid of s.auction.participants) {
         if (!this.isAuto(pid)) continue;
-        const at = this.auctionNext.get(pid) ?? now + (500 + Math.random() * 1500) * f;
+        const at = this.auctionNext.get(pid) ?? now + (1000 + Math.random() * 1500) * f;
         if (!this.auctionNext.has(pid)) this.auctionNext.set(pid, at);
         if (now < at) continue;
-        this.auctionNext.set(pid, now + (900 + Math.random() * 1600) * f);
+        this.auctionNext.set(pid, now + (1200 + Math.random() * 1600) * f);
         const p = playerById(s, pid)!;
         const a = botDecide(s, pid, p.isBot ? p.botLevel : 'easy', this.mem);
         if (a && (a.type === 'bid' || a.type === 'pass')) {
@@ -211,7 +212,8 @@ export class GameRunner {
   private applyAuto(pid: string, a: GameAction) {
     const res = applyAction(this.state, pid, a, this.now());
     const f = speedFactor(this.state);
-    this.nextBotAt = Math.max(this.now(), this.state.busyUntil) + (300 + Math.random() * 400) * f;
+    // Пауза между действиями ботов — не меньше секунды, чтобы игрок успевал следить за игрой
+    this.nextBotAt = Math.max(this.now(), this.state.busyUntil) + Math.max(1000, (1000 + Math.random() * 500) * f) * (f < 0.1 ? f : 1);
     if (res.ok) this.emit();
     return res;
   }

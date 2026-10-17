@@ -5,6 +5,7 @@ import { GameRunner } from '../../shared/runner';
 import { director } from './director';
 import { store, lsGet, lsSet, type OfflineSeat } from '../store';
 import { net } from '../net/netClient';
+import { leaveWifi } from '../net/wifi';
 import { sound } from '../audio/sound';
 import { recordGameResult } from './records';
 
@@ -150,7 +151,7 @@ export function act(a: GameAction) {
 export function leaveGame() {
   const st = store();
   if (st.mode === 'local') stopLocal();
-  if (st.mode === 'net') net.send({ t: 'leaveRoom' });
+  if (st.mode === 'net') leaveWifi();
   director.reset();
   st.set({ mode: null, game: null, myId: null, dialog: null, card: null, wheel: null, order: null, banner: null, room: null });
   st.go('menu');

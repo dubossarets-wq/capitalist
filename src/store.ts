@@ -129,7 +129,7 @@ export function detectQuality(): Quality {
 
 const defaultPrefs = (): Prefs => {
   const quality = detectQuality();
-  return { sfx: 0.7, music: 0.3, quality, anim: quality === 'low' ? 'fast' : 'full', cameraFollow: true, menuTheme: 'classic', showLog: true, view: '3d' };
+  return { sfx: 0.7, music: 0.3, quality, anim: 'full', cameraFollow: true, menuTheme: 'classic', showLog: true, view: '3d' };
 };
 
 let toastSeq = 0;

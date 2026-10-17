@@ -75,7 +75,8 @@ class Director {
         if (evs.length && evs[0].id > this.lastEvent + 1 && this.lastEvent > 0) snap = true;
         if (this.queue.length > 4 || document.hidden) snap = true;
         // Отстаём от игры (медленное устройство) — ускоряем анимации, чтобы догнать
-        const lag = this.queue.length >= 3 ? 0.35 : this.queue.length >= 1 ? 0.65 : 1;
+        // Ускоряем только при заметном отставании, иначе игрок не успевает следить
+        const lag = this.queue.length >= 5 ? 0.4 : this.queue.length >= 3 ? 0.75 : 1;
         const f = this.speed(s) * lag;
         if (scene) {
           scene.speed = f;

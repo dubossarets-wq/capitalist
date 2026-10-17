@@ -7,14 +7,19 @@ import { store, lsGet, lsSet } from '../store';
 import { director } from '../game/director';
 import { sound } from '../audio/sound';
 import { recordGameResult } from '../game/records';
+import { WSTransport, type Transport } from './transports';
 
 const TOKEN_KEY = 'capitalist.token.v1';
 const SERVER_KEY = 'capitalist.server.v1';
 
 type Waiter = { resolve: () => void; reject: (e: Error) => void };
 
+export type NetMode = 'server' | 'host' | 'guest';
+
 class NetClient {
-  private ws: WebSocket | null = null;
+  private transport: Transport | null = null;
+  private factory: () => Transport = () => new WSTransport(this.url());
+  mode: NetMode = 'server';
   private wanted = false;
   private retry = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -39,12 +44,24 @@ class NetClient {
     return `${secure ? 'wss' : 'ws'}://${host}/ws`;
   }
 
+  /** Выбрать способ связи: сервер на компьютере, хозяин в этом браузере или гость хозяина */
+  use(mode: NetMode, factory: () => Transport) {
+    if (this.transport) this.disconnect();
+    this.mode = mode;
+    this.factory = factory;
+    this.retry = 0;
+  }
+
+  useServer() {
+    this.use('server', () => new WSTransport(this.url()));
+  }
+
   /** Подключиться (или убедиться, что подключены) */
   connect(): Promise<void> {
     this.wanted = true;
-    if (this.ws && this.ws.readyState === WebSocket.OPEN && store().net.status === 'online') return Promise.resolve();
+    if (this.transport && this.transport.isOpen() && store().net.status === 'online') return Promise.resolve();
     const p = new Promise<void>((resolve, reject) => this.waiters.push({ resolve, reject }));
-    if (!this.ws || this.ws.readyState === WebSocket.CLOSED || this.ws.readyState === WebSocket.CLOSING) this.open();
+    if (!this.transport) this.open();
     return p;
   }
 
@@ -53,52 +70,49 @@ class NetClient {
     this.retryTimer = null;
     const st = store();
     st.set({ net: { ...st.net, status: this.retry ? 'reconnecting' : 'connecting', error: null } });
-    let ws: WebSocket;
-    try {
-      ws = new WebSocket(this.url());
-    } catch (e) {
-      this.fail('Неверный адрес сервера');
-      return;
-    }
-    this.ws = ws;
-    const timeout = setTimeout(() => {
-      if (ws.readyState !== WebSocket.OPEN) ws.close();
-    }, 6000);
-    ws.onopen = () => {
-      clearTimeout(timeout);
-      const token = lsGet<string>(TOKEN_KEY, '');
-      this.raw({ t: 'hello', token: token || undefined, profile: store().profile });
-    };
-    ws.onmessage = (e) => {
-      let msg: ServerMsg;
-      try {
-        msg = JSON.parse(String(e.data));
-      } catch {
-        return;
-      }
-      this.onMessage(msg);
-    };
-    ws.onclose = () => {
-      clearTimeout(timeout);
-      if (this.ws !== ws) return;
-      this.ws = null;
-      if (this.pingTimer) clearInterval(this.pingTimer);
-      this.pingTimer = null;
-      if (!this.wanted) {
-        store().set({ net: { ...store().net, status: 'idle' } });
-        return;
-      }
-      this.retry++;
-      if (this.waiters.length && this.retry >= 2) {
-        this.fail('Сервер не отвечает. Убедитесь, что сервер запущен на компьютере и устройство в той же Wi-Fi сети.');
-      }
-      const delay = Math.min(5000, 600 * this.retry);
-      store().set({ net: { ...store().net, status: 'reconnecting' } });
-      this.retryTimer = setTimeout(() => this.open(), delay);
-    };
-    ws.onerror = () => {
-      /* обработается в onclose */
-    };
+    const t = this.transport ?? this.factory();
+    this.transport = t;
+    t.open({
+      onOpen: () => {
+        if (this.transport !== t) return;
+        const token = lsGet<string>(TOKEN_KEY, '');
+        this.raw({ t: 'hello', token: token || undefined, profile: store().profile });
+      },
+      onMessage: (data) => {
+        if (this.transport !== t) return;
+        let msg: ServerMsg;
+        try {
+          msg = JSON.parse(data);
+        } catch {
+          return;
+        }
+        this.onMessage(msg);
+      },
+      onClose: (reason) => {
+        if (this.transport !== t) return;
+        if (this.pingTimer) clearInterval(this.pingTimer);
+        this.pingTimer = null;
+        if (!this.wanted) {
+          this.transport = null;
+          store().set({ net: { ...store().net, status: 'idle' } });
+          return;
+        }
+        // Сервер — переоткрываем соединение заново; хозяин по WebRTC — ждём его возвращения в той же комнате
+        if (t.kind === 'server') this.transport = null;
+        this.retry++;
+        if (this.waiters.length && (this.retry >= 2 || (reason && t.kind === 'guest'))) {
+          this.fail(
+            reason ??
+              (t.kind === 'server'
+                ? 'Сервер не отвечает. Убедитесь, что сервер запущен на компьютере и устройство в той же Wi-Fi сети.'
+                : 'Не удалось подключиться к хозяину комнаты'),
+          );
+        }
+        const delay = Math.min(5000, 600 * this.retry);
+        store().set({ net: { ...store().net, status: 'reconnecting', error: reason ?? store().net.error } });
+        this.retryTimer = setTimeout(() => this.open(), delay);
+      },
+    });
   }
 
   private fail(message: string) {
@@ -111,7 +125,7 @@ class NetClient {
 
   /** Немедленная попытка переподключения (после пробуждения устройства) */
   wake() {
-    if (this.wanted && !this.ws) {
+    if (this.wanted && (!this.transport || !this.transport.isOpen())) {
       this.retry = Math.max(1, this.retry);
       this.open();
     }
@@ -121,17 +135,18 @@ class NetClient {
     this.wanted = false;
     this.retry = 0;
     if (this.retryTimer) clearTimeout(this.retryTimer);
-    this.ws?.close();
-    this.ws = null;
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    const t = this.transport;
+    this.transport = null;
+    t?.close();
+    const w = this.waiters;
+    this.waiters = [];
+    w.forEach((x) => x.reject(new Error('Отключено')));
     store().set({ net: { ...store().net, status: 'idle' }, room: null, rooms: [] });
   }
 
   private raw(msg: ClientMsg) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(msg));
-      return true;
-    }
-    return false;
+    return !!this.transport && this.transport.send(JSON.stringify(msg));
   }
 
   send(msg: ClientMsg) {
