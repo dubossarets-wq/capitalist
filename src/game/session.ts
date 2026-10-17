@@ -156,6 +156,9 @@ export function leaveGame() {
   st.go('menu');
 }
 
+/** Для автотестов интерфейса: остановить ботов, чтобы окна не менялись во время снимков */
+(globalThis as any).__capFreeze = () => runner?.stop();
+
 export function isLocalRunning() {
   return !!runner;
 }

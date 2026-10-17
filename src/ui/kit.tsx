@@ -21,9 +21,11 @@ export function GameButton(props: {
   title?: string;
   style?: CSSProperties;
   silent?: boolean;
+  /** Во всю ширину сетки кнопок */
+  span?: boolean;
 }) {
-  const { children, icon, sub, color = 'gold', size = 'md', onClick, disabled, pulse, block, center, round, badge, title, style, silent } = props;
-  const cls = ['g-btn', color === 'gold' ? '' : color, size !== 'md' ? size : '', pulse ? 'pulse' : '', block ? 'block' : '', center ? 'center' : '', round ? 'round' : '']
+  const { children, icon, sub, color = 'gold', size = 'md', onClick, disabled, pulse, block, center, round, badge, title, style, silent, span } = props;
+  const cls = ['g-btn', color === 'gold' ? '' : color, size !== 'md' ? size : '', pulse ? 'pulse' : '', block ? 'block' : '', center ? 'center' : '', round ? 'round' : '', span ? 'span' : '']
     .filter(Boolean)
     .join(' ');
   return (
@@ -125,9 +127,9 @@ export function Stepper(props: { value: number; min: number; max: number; step?:
   );
 }
 
-export function Segmented<T extends string | number>(props: { value: T; options: { value: T; label: ReactNode }[]; onChange: (v: T) => void; disabled?: boolean }) {
+export function Segmented<T extends string | number>(props: { value: T; options: { value: T; label: ReactNode }[]; onChange: (v: T) => void; disabled?: boolean; stretch?: boolean }) {
   return (
-    <div className="segmented">
+    <div className={`segmented ${props.stretch ? 'stretch' : ''}`}>
       {props.options.map((o) => (
         <button
           key={String(o.value)}
@@ -153,7 +155,7 @@ export function SettingRow(props: { icon?: string; title: ReactNode; desc?: Reac
         <div className="setting-row__title">{props.title}</div>
         {props.desc && <div className="setting-row__desc">{props.desc}</div>}
       </div>
-      {props.children}
+      {props.children != null && <div className="setting-row__ctrl">{props.children}</div>}
     </div>
   );
 }

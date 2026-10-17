@@ -31,6 +31,16 @@ export function SettingsPanel() {
           />
         </div>
       </SettingRow>
+      <SettingRow icon="map" title="Вид поля" desc="2D — плоский вид сверху: всё поле сразу, легче для слабых устройств">
+        <Segmented
+          value={prefs.view}
+          onChange={(v) => setPrefs({ view: v })}
+          options={[
+            { value: '3d', label: '3D' },
+            { value: '2d', label: '2D' },
+          ]}
+        />
+      </SettingRow>
       <SettingRow icon="camera" title="Качество графики" desc="Низкое — без теней, для слабых телефонов">
         <Segmented
           value={prefs.quality}

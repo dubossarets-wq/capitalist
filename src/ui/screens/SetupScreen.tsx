@@ -114,28 +114,35 @@ export function SetupScreen() {
                 <Avatar id={b.profile.avatar} color={b.profile.color} size={2.8} bot />
                 <div className="grow">
                   <div className="seat-card__name">{b.profile.name}</div>
-                  <div style={{ marginTop: '0.25rem' }}>
-                    <Segmented
-                      value={b.botLevel}
-                      onChange={(lv) => {
-                        const list = [...bots];
-                        list[i] = { ...b, botLevel: lv };
-                        updateBots(list);
-                      }}
-                      options={(['easy', 'medium', 'hard'] as BotLevel[]).map((lv) => ({ value: lv, label: LEVEL_NAMES[lv] }))}
-                    />
+                  <div className="seat-card__meta">
+                    <span className="tag blue">
+                      <Icon name="robot" /> БОТ
+                    </span>
+                    <span>{TOKENS.find((t) => t.id === b.profile.token)?.name}</span>
                   </div>
                 </div>
                 <button className="pick-card" style={{ padding: '0.2rem' }} title="Сменить фишку" onClick={() => (sound.play('pop'), cycleToken(i))}>
                   <TokenImg token={b.profile.token} color={b.profile.color} size={2.8} />
                 </button>
                 <GameButton round size="sm" color="red" icon="close" title="Убрать бота" disabled={bots.length <= 1} onClick={() => updateBots(bots.filter((_, k) => k !== i))} />
+                <div className="seat-card__full">
+                  <Segmented
+                    stretch
+                    value={b.botLevel}
+                    onChange={(lv) => {
+                      const list = [...bots];
+                      list[i] = { ...b, botLevel: lv };
+                      updateBots(list);
+                    }}
+                    options={(['easy', 'medium', 'hard'] as BotLevel[]).map((lv) => ({ value: lv, label: LEVEL_NAMES[lv] }))}
+                  />
+                </div>
               </div>
             ))}
             {seats.length < 8 && (
               <div className="empty-seat">
                 <div style={{ marginBottom: '0.5rem' }}>Добавить бота</div>
-                <div className="row center-x wrap">
+                <div className="btn-grid">
                   <GameButton size="sm" color="green" icon="plus" onClick={() => addBot('easy')}>
                     ЛЁГКИЙ
                   </GameButton>

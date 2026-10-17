@@ -18,7 +18,7 @@ export function ProfileEditor({ profile, onChange, takenColors = [], takenTokens
       )}
       <div>
         <div className="label">Цвет игрока</div>
-        <div className="row wrap">
+        <div className="color-grid">
           {PLAYER_COLORS.map((c) => (
             <button key={c} className={`color-dot ${profile.color === c ? 'active' : ''}`} style={{ background: c }} disabled={takenColors.includes(c) && profile.color !== c} onClick={() => (sound.play('pop'), set({ color: c }))} />
           ))}
@@ -26,9 +26,9 @@ export function ProfileEditor({ profile, onChange, takenColors = [], takenTokens
       </div>
       <div>
         <div className="label">Аватар</div>
-        <div className="row wrap" style={{ gap: '0.7rem' }}>
+        <div className="pick-grid round" style={{ ['--cell' as any]: '3.6rem' }}>
           {AVATARS.map((a) => (
-            <button key={a} className={`pick-card ${profile.avatar === a ? 'active' : ''}`} style={{ padding: '0.35rem', borderRadius: '50%' }} onClick={() => (sound.play('pop'), set({ avatar: a }))}>
+            <button key={a} className={`pick-card ${profile.avatar === a ? 'active' : ''}`} onClick={() => (sound.play('pop'), set({ avatar: a }))}>
               <Avatar id={a} color={profile.color} size={2.6} />
             </button>
           ))}
@@ -37,11 +37,11 @@ export function ProfileEditor({ profile, onChange, takenColors = [], takenTokens
       {TOKEN_SETS.map((setName) => (
         <div key={setName}>
           <div className="label">Фишки — набор «{setName}»</div>
-          <div className="row wrap" style={{ gap: '0.5rem' }}>
+          <div className="pick-grid">
             {TOKENS.filter((t) => t.set === setName).map((t) => (
-              <button key={t.id} className={`pick-card ${profile.token === t.id ? 'active' : ''}`} style={{ textAlign: 'center', padding: '0.4rem 0.5rem', width: '5.6rem' }} disabled={takenTokens.includes(t.id) && profile.token !== t.id} onClick={() => (sound.play('pop'), set({ token: t.id }))}>
+              <button key={t.id} className={`pick-card ${profile.token === t.id ? 'active' : ''}`} disabled={takenTokens.includes(t.id) && profile.token !== t.id} onClick={() => (sound.play('pop'), set({ token: t.id }))}>
                 <TokenImg token={t.id} color={profile.color} size={3.4} />
-                <div className="small title-font" style={{ marginTop: '0.2rem' }}>{t.name}</div>
+                <div className="pick-label">{t.name}</div>
               </button>
             ))}
           </div>

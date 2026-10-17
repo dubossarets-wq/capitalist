@@ -109,6 +109,7 @@ class Director {
     if (!scene) return;
     leaveMenuScene();
     scene.setBoard(s.board, s.settings.theme, s.settings.diceStyle, goSalary(s));
+    scene.setViewMode(store().prefs.view);
     scene.setPlayers(s.players.map((p) => ({ id: p.id, token: p.token, color: p.color })));
     // Фишки ставим по фактическим позициям; для свежей партии — на СТАРТ
     for (const p of s.players) scene.placeToken(p.id, p.position, p.inJail, p.bankrupt);

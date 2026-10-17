@@ -487,11 +487,49 @@ const ICONS: Record<string, Draw> = {
 const CELL_PX_W = 256;
 const CELL_PX_D = 410;
 
-export function cellTexture(board: BoardDef, cell: CellDef, theme: ThemeDef, scale = 1): THREE.Texture {
-  const [c, ctx] = mk(Math.round(CELL_PX_W * scale), Math.round(CELL_PX_D * scale));
+/**
+ * Поворот холста под сторону поля. Картинка клетки рисуется «как её видит игрок снизу»
+ * (текст всегда горизонтален и читается снизу), а преобразование укладывает её
+ * в систему координат клетки, повёрнутой вдоль своей стороны поля.
+ * cw/ch — размеры холста (вдоль локальной ширины и глубины клетки).
+ */
+function applySide(ctx: CanvasRenderingContext2D, side: number, cw: number, ch: number) {
+  if (side === 1) ctx.transform(0, -1, 1, 0, 0, ch);
+  else if (side === 2) ctx.transform(-1, 0, 0, -1, cw, ch);
+  else if (side === 3) ctx.transform(0, 1, -1, 0, cw, 0);
+}
+
+/** Положение ценника относительно центра клетки в мировых координатах (x — вправо, z — вниз), единицы поля */
+export function tagOffset(side: number): [number, number] {
+  switch (side) {
+    case 1:
+      return [-0.1875, 0.332];
+    case 2:
+      return [0, -0.57];
+    case 3:
+      return [0.1875, 0.332];
+    default:
+      return [0, 0.57];
+  }
+}
+
+interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export function cellTexture(board: BoardDef, cell: CellDef, theme: ThemeDef, side = 0, scale = 1): THREE.Texture {
+  const CW = CELL_PX_W;
+  const CD = CELL_PX_D;
+  const [c, ctx] = mk(Math.round(CW * scale), Math.round(CD * scale));
   ctx.scale(scale, scale);
-  const W = CELL_PX_W;
-  const H = CELL_PX_D;
+  applySide(ctx, side, CW, CD);
+  const land = side % 2 === 1;
+  const W = land ? CD : CW; // ширина картинки на экране
+  const H = land ? CW : CD; // высота картинки на экране
+
   const bg = ctx.createLinearGradient(0, 0, 0, H);
   bg.addColorStop(0, theme.cellBg);
   bg.addColorStop(1, theme.cellBg2);
@@ -499,79 +537,103 @@ export function cellTexture(board: BoardDef, cell: CellDef, theme: ThemeDef, sca
   ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = theme.cellText;
 
-  const nameArea = (y: number, h: number, size = 34) => {
-    const { lines, size: s } = fitText(ctx, cell.name.toUpperCase(), W - 30, 3, size, FONT_TEXT, 16);
+  // Цветная полоса — на внутренней стороне поля
+  const B = 96;
+  let content: Rect = { x: 0, y: 0, w: W, h: H };
+  const hasTag = cell.type === 'property' || cell.type === 'transport' || cell.type === 'utility' || cell.type === 'tax';
+  if (cell.type === 'property') {
+    const col = board.groups[cell.group!]?.color ?? '#888';
+    const band: Rect =
+      side === 0 ? { x: 0, y: 0, w: W, h: B } : side === 2 ? { x: 0, y: H - B, w: W, h: B } : side === 1 ? { x: W - B, y: 0, w: B, h: H } : { x: 0, y: 0, w: B, h: H };
+    const g = ctx.createLinearGradient(0, band.y, 0, band.y + band.h);
+    g.addColorStop(0, shade(col, 0.25));
+    g.addColorStop(1, shade(col, -0.12));
+    ctx.fillStyle = g;
+    ctx.fillRect(band.x, band.y, band.w, band.h);
+    ctx.fillStyle = 'rgba(255,255,255,0.28)';
+    ctx.fillRect(band.x, band.y, band.w, band.h * 0.38);
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    if (side === 0) ctx.fillRect(0, B - 5, W, 5);
+    else if (side === 2) ctx.fillRect(0, H - B, W, 5);
+    else if (side === 1) ctx.fillRect(W - B, 0, 5, H);
+    else ctx.fillRect(B - 5, 0, 5, H);
+    content = side === 0 ? { x: 0, y: B, w: W, h: H - B } : side === 2 ? { x: 0, y: 0, w: W, h: H - B } : side === 1 ? { x: 0, y: 0, w: W - B, h: H } : { x: B, y: 0, w: W - B, h: H };
+  }
+  // Место под ценник (сам ценник — отдельный объект над клеткой)
+  if (hasTag) {
+    const T = land ? 90 : 104;
+    if (side === 2) content = { ...content, y: content.y + T, h: content.h - T };
+    else content = { ...content, h: content.h - T };
+  }
+
+  const pad = 14;
+  const nameIn = (r: Rect, size: number, maxLines: number) => {
+    const { lines, size: sz } = fitText(ctx, cell.name.toUpperCase(), r.w - pad * 2, maxLines, size, FONT_TEXT, 15);
     ctx.fillStyle = theme.cellText;
-    drawLines(ctx, lines, W / 2, y + h / 2, s);
+    drawLines(ctx, lines, r.x + r.w / 2, r.y + r.h / 2, sz);
+  };
+  const titleIn = (text: string, r: Rect, size: number) => {
+    ctx.fillStyle = theme.cellText;
+    ctx.font = `${size}px ${FONT_TITLE}`;
+    const w = ctx.measureText(text).width;
+    if (w > r.w - pad * 2) ctx.font = `${Math.floor((size * (r.w - pad * 2)) / w)}px ${FONT_TITLE}`;
+    ctx.fillText(text, r.x + r.w / 2, r.y + r.h / 2);
+  };
+  const withIcon = (draw: Draw, r: Rect, nameH: number, iconMax: number) => {
+    // Название сверху, иконка — по центру оставшегося места
+    nameIn({ x: r.x, y: r.y + 6, w: r.w, h: nameH }, land ? 24 : 28, 2);
+    const rest: Rect = { x: r.x, y: r.y + nameH + 6, w: r.w, h: r.h - nameH - 6 };
+    const sz = Math.min(iconMax, rest.h * 0.86, rest.w * 0.7);
+    draw(ctx, rest.x + rest.w / 2, rest.y + rest.h / 2, sz);
   };
 
   switch (cell.type) {
-    case 'property': {
-      const col = board.groups[cell.group!]?.color ?? '#888';
-      const bh = 96;
-      const g = ctx.createLinearGradient(0, 0, 0, bh);
-      g.addColorStop(0, shade(col, 0.25));
-      g.addColorStop(1, shade(col, -0.12));
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, W, bh);
-      ctx.fillStyle = 'rgba(255,255,255,0.28)';
-      ctx.fillRect(0, 0, W, bh * 0.38);
-      ctx.fillStyle = 'rgba(0,0,0,0.25)';
-      ctx.fillRect(0, bh - 5, W, 5);
-      nameArea(bh + 10, 170, 36);
+    case 'property':
+      nameIn(content, land ? 42 : 38, land ? 2 : 3);
       break;
-    }
     case 'transport':
     case 'utility': {
-      nameArea(10, 92, 28);
       const draw = ICONS[cell.icon ?? (cell.type === 'transport' ? 'plane' : 'bolt')] ?? iconBolt;
-      draw(ctx, W / 2, 200, 120);
+      withIcon(draw, content, land ? 62 : 92, 120);
       break;
     }
-    case 'tax': {
-      nameArea(10, 92, 28);
-      iconTax(ctx, W / 2, 196, 110);
+    case 'tax':
+      withIcon(iconTax, content, land ? 62 : 92, 110);
       break;
-    }
-    case 'chance': {
-      ctx.fillStyle = theme.cellText;
-      ctx.font = `30px ${FONT_TITLE}`;
-      ctx.fillText('ШАНС', W / 2, 50);
-      iconQuestion(ctx, W / 2, 200, 170);
+    case 'chance':
+      titleIn('ШАНС', { x: content.x, y: content.y + 8, w: content.w, h: 52 }, 30);
+      iconQuestion(ctx, content.x + content.w / 2, content.y + 60 + (content.h - 60) / 2, Math.min(170, (content.h - 60) * 0.85));
       break;
-    }
-    case 'chest': {
-      ctx.fillStyle = theme.cellText;
-      ctx.font = `30px ${FONT_TITLE}`;
-      ctx.fillText('КАЗНА', W / 2, 50);
-      iconChest(ctx, W / 2, 210, 140);
+    case 'chest':
+      titleIn('КАЗНА', { x: content.x, y: content.y + 8, w: content.w, h: 52 }, 30);
+      iconChest(ctx, content.x + content.w / 2, content.y + 60 + (content.h - 60) / 2, Math.min(140, (content.h - 60) * 0.8));
       break;
-    }
     case 'wheel': {
-      ctx.fillStyle = theme.cellText;
-      ctx.font = `26px ${FONT_TITLE}`;
-      ctx.fillText('КОЛЕСО', W / 2, 38);
-      ctx.fillText('ФОРТУНЫ', W / 2, 70);
-      iconWheel(ctx, W / 2, 210, 150);
+      if (land) {
+        titleIn('КОЛЕСО ФОРТУНЫ', { x: content.x, y: content.y + 8, w: content.w, h: 48 }, 28);
+        iconWheel(ctx, content.x + content.w / 2, content.y + 56 + (content.h - 56) / 2, Math.min(150, (content.h - 56) * 0.8));
+      } else {
+        titleIn('КОЛЕСО', { x: content.x, y: content.y + 6, w: content.w, h: 40 }, 26);
+        titleIn('ФОРТУНЫ', { x: content.x, y: content.y + 40, w: content.w, h: 40 }, 26);
+        iconWheel(ctx, content.x + content.w / 2, content.y + 84 + (content.h - 84) / 2, Math.min(150, (content.h - 84) * 0.8));
+      }
       break;
     }
-    default: {
-      nameArea(40, 200, 34);
-    }
+    default:
+      nameIn(content, 34, 3);
   }
-  // Внешняя рамка
   ctx.strokeStyle = 'rgba(0,0,0,0.18)';
   ctx.lineWidth = 4;
   ctx.strokeRect(2, 2, W - 4, H - 4);
   return canvasTexture(c);
 }
 
-export function cornerTexture(cell: CellDef, theme: ThemeDef, salary: number, scale = 1): THREE.Texture {
+export function cornerTexture(cell: CellDef, theme: ThemeDef, salary: number, side = 0, scale = 1): THREE.Texture {
   const S = 410;
   const [c, ctx] = mk(Math.round(S * scale), Math.round(S * scale));
   ctx.scale(scale, scale);
+  applySide(ctx, side, S, S);
   const bg = ctx.createRadialGradient(S / 2, S / 2, 20, S / 2, S / 2, S * 0.75);
   bg.addColorStop(0, theme.cornerBg);
   bg.addColorStop(1, theme.cornerBg2);
@@ -580,69 +642,66 @@ export function cornerTexture(cell: CellDef, theme: ThemeDef, salary: number, sc
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  const title = (text: string, y: number, size: number, color: string) => {
+  const title = (text: string, x: number, y: number, size: number, color: string, maxW = S - 40) => {
     ctx.font = `${size}px ${FONT_TITLE}`;
-    ctx.lineWidth = size * 0.16;
+    const w = ctx.measureText(text).width;
+    const sz = w > maxW ? Math.floor((size * maxW) / w) : size;
+    ctx.font = `${sz}px ${FONT_TITLE}`;
+    ctx.lineWidth = sz * 0.16;
+    ctx.lineJoin = 'round';
     ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-    ctx.strokeText(text, S / 2, y);
+    ctx.strokeText(text, x, y);
     ctx.fillStyle = color;
-    ctx.fillText(text, S / 2, y);
+    ctx.fillText(text, x, y);
+  };
+  const caption = (text: string, x: number, y: number, size: number, maxW = S - 40) => {
+    ctx.font = `700 ${size}px ${FONT_TEXT}`;
+    const w = ctx.measureText(text).width;
+    if (w > maxW) ctx.font = `700 ${Math.floor((size * maxW) / w)}px ${FONT_TEXT}`;
+    ctx.fillStyle = theme.cellText;
+    ctx.fillText(text, x, y);
   };
 
   switch (cell.type) {
     case 'start': {
-      title('СТАРТ', 130, 84, '#ff3d3d');
-      iconArrow(ctx, S / 2, 250, 230);
-      ctx.font = `700 34px ${FONT_TEXT}`;
-      ctx.fillStyle = theme.cellText;
-      ctx.fillText(salary > 0 ? `+$${salary} за круг` : 'без зарплаты', S / 2, 345);
+      title('СТАРТ', S / 2, 110, 84, '#ff3d3d');
+      iconArrow(ctx, S / 2, 235, 230);
+      caption(salary > 0 ? `+$${salary} за круг` : 'без зарплаты', S / 2, 345, 34);
       break;
     }
     case 'jail': {
-      // Камера — левый верхний угол (внутренний угол поля)
+      // Камера — во внутреннем углу поля (на экране — справа сверху), «в гостях» — внизу
       const jw = 250;
-      const g = ctx.createLinearGradient(0, 0, jw, jw);
+      const x0 = S - jw;
+      const g = ctx.createLinearGradient(x0, 0, S, jw);
       g.addColorStop(0, '#ffb74d');
       g.addColorStop(1, '#ef6c00');
       ctx.fillStyle = g;
-      ctx.fillRect(0, 0, jw, jw);
-      ctx.fillStyle = '#4e2a00';
-      ctx.font = `40px ${FONT_TITLE}`;
-      ctx.fillText('ТЮРЬМА', jw / 2, jw / 2);
+      ctx.fillRect(x0, 0, jw, jw);
       ctx.fillStyle = '#37474f';
-      for (let x = 22; x < jw; x += 38) ctx.fillRect(x, 0, 10, jw);
-      ctx.fillRect(0, 0, jw, 12);
-      ctx.fillRect(0, jw - 12, jw, 12);
+      for (let x = x0 + 22; x < S; x += 38) ctx.fillRect(x, 0, 10, jw);
+      ctx.fillRect(x0, 0, jw, 12);
+      ctx.fillRect(x0, jw - 12, jw, 12);
+      title('ТЮРЬМА', x0 + jw / 2, jw / 2, 40, '#ffe0b2', jw - 30);
       ctx.strokeStyle = '#263238';
       ctx.lineWidth = 6;
-      ctx.strokeRect(3, 3, jw - 6, jw - 6);
-      ctx.fillStyle = theme.cellText;
-      ctx.font = `700 30px ${FONT_TEXT}`;
-      ctx.fillText('ПРОСТО', S / 2 + 10, jw + 50);
-      ctx.fillText('В ГОСТЯХ', S / 2 + 10, jw + 90);
-      ctx.save();
-      ctx.translate(jw + 80, jw / 2);
-      ctx.rotate(Math.PI / 2);
-      ctx.font = `700 28px ${FONT_TEXT}`;
-      ctx.fillText('В ГОСТЯХ', 0, 0);
-      ctx.restore();
+      ctx.strokeRect(x0 + 3, 3, jw - 6, jw - 6);
+      caption('ПРОСТО В ГОСТЯХ', S / 2, S - 70, 30, S - 40);
       break;
     }
     case 'parking': {
-      title('ОТПУСК', 80, 64, '#00a86b');
-      iconPalm(ctx, S / 2, 230, 230);
-      ctx.font = `700 26px ${FONT_TEXT}`;
-      ctx.fillStyle = theme.cellText;
-      ctx.fillText('джекпот налогов', S / 2, 370);
+      title('ОТПУСК', S / 2, 66, 60, '#00a86b');
+      iconPalm(ctx, S / 2, 245, 180);
+      caption('джекпот налогов', S / 2, 365, 26);
       break;
     }
     case 'gotojail': {
-      title('В ТЮРЬМУ!', 84, 58, '#1e5bd8');
-      iconPolice(ctx, S / 2, 240, 230);
+      title('В ТЮРЬМУ!', S / 2, 78, 58, '#1e5bd8');
+      iconPolice(ctx, S / 2, 245, 230);
       break;
     }
     default:
-      title(cell.name.toUpperCase(), S / 2, 50, theme.cellText);
+      title(cell.name.toUpperCase(), S / 2, S / 2, 50, theme.cellText);
   }
   ctx.strokeStyle = 'rgba(0,0,0,0.2)';
   ctx.lineWidth = 6;

@@ -364,6 +364,15 @@ const ICONS: Record<string, ReactNode> = {
       <path d="M36 32 H58 M50 24 L58 32 L50 40" fill="none" stroke="#ff8a8a" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" />
     </>
   ),
+  cube: (
+    <>
+      <path d="M32 6 L56 18 L56 46 L32 58 L8 46 L8 18 Z" fill="#7fd6ff" {...st} />
+      <path d="M8 18 L32 30 L56 18" fill="none" {...st} />
+      <path d="M32 30 L32 58" {...st} />
+      <path d="M32 30 L56 18 L56 46 L32 58 Z" fill="#4fa8e0" {...st} />
+      <path d="M14 20 L30 12" stroke="#fff" strokeWidth="3" strokeLinecap="round" opacity="0.7" />
+    </>
+  ),
   eye: (
     <>
       <path d="M4 32 Q32 6 60 32 Q32 58 4 32 Z" fill="#fff" {...st} />

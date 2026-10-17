@@ -33,6 +33,9 @@ export function showMenuScene(theme: ThemeId) {
     s.relayout(true);
     menuKey = key;
   }
+  // В меню поле всегда объёмное — это витрина игры
+  s.setViewMode('3d');
+  s.setSafeArea(0, 0);
   s.setMenuMode(true);
 }
 

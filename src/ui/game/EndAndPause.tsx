@@ -41,6 +41,7 @@ export function GameOver() {
           </div>
         </div>
       )}
+      <div className="table-wrap">
       <table className="stats-table">
         <thead>
           <tr>
@@ -48,8 +49,8 @@ export function GameOver() {
             <th>Капитал</th>
             <th>Участков</th>
             <th>Аренда +</th>
-            <th>Аренда −</th>
-            <th>Сделок</th>
+            <th className="opt">Аренда −</th>
+            <th className="opt">Сделок</th>
           </tr>
         </thead>
         <tbody>
@@ -66,26 +67,27 @@ export function GameOver() {
               <td>{money(p.bankrupt ? p.stats.maxNetWorth : netWorth(s, p.id))}</td>
               <td>{p.bankrupt ? p.stats.propertiesBought : ownedCells(s, p.id).length}</td>
               <td>{money(p.stats.rentReceived)}</td>
-              <td>{money(p.stats.rentPaid)}</td>
-              <td>{p.stats.tradesDone}</td>
+              <td className="opt">{money(p.stats.rentPaid)}</td>
+              <td className="opt">{p.stats.tradesDone}</td>
             </tr>
           ))}
         </tbody>
       </table>
-      <div className="row wrap center-x" style={{ marginTop: '1rem' }}>
-        <GameButton color="purple" icon="back" onClick={leaveGame}>
-          В МЕНЮ
-        </GameButton>
+      </div>
+      <div className="actions-grid" style={{ marginTop: '1rem' }}>
         {mode === 'local' && (
-          <GameButton color="green" size="lg" icon="refresh" pulse onClick={restartLocal}>
+          <GameButton span color="green" size="lg" icon="refresh" pulse onClick={restartLocal}>
             РЕВАНШ
           </GameButton>
         )}
         {isHost && (
-          <GameButton color="green" size="lg" icon="refresh" pulse onClick={() => net.send({ t: 'backToLobby' })}>
+          <GameButton span color="green" size="lg" icon="refresh" pulse onClick={() => net.send({ t: 'backToLobby' })}>
             В ЛОББИ
           </GameButton>
         )}
+        <GameButton color="purple" icon="back" onClick={leaveGame}>
+          В МЕНЮ
+        </GameButton>
         <GameButton color="dark" icon="scroll" onClick={() => store().set({ dialog: 'log' })}>
           ИСТОРИЯ
         </GameButton>

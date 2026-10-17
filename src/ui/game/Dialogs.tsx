@@ -37,7 +37,7 @@ export function BuyDialog() {
     <Modal title="Свободный участок" clear width="auto">
       <div className="col" style={{ alignItems: 'center' }}>
         <PropCard s={s} i={i} />
-        <div className="row wrap center-x" style={{ marginTop: '0.4rem' }}>
+        <div className="actions-grid" style={{ marginTop: '0.4rem', maxWidth: '22rem' }}>
           <GameButton color="green" size="lg" icon="cart" pulse={short <= 0} disabled={short > 0} onClick={() => act({ type: 'buy' })} sub={short > 0 ? `не хватает ${money(short)}` : `останется ${money(me.cash - price)}`}>
             КУПИТЬ {money(price)}
           </GameButton>
@@ -97,15 +97,15 @@ export function AuctionDialog() {
         </div>
         {inAuction && me ? (
           <>
-            <div className="row wrap center-x">
+            <div className="actions-grid three">
               {[10, 50, 100].map((inc) => (
                 <GameButton key={inc} color="green" disabled={au.highBid + inc > me.cash || au.highBidder === me.id} onClick={() => bid(inc)}>
                   +{money(inc)}
                 </GameButton>
               ))}
             </div>
-            <div className="row center-x">
-              <GameButton color="red" icon="close" disabled={au.highBidder === me.id} onClick={() => act({ type: 'pass' })}>
+            <div className="actions-grid">
+              <GameButton span color="red" icon="close" disabled={au.highBidder === me.id} onClick={() => act({ type: 'pass' })}>
                 ПАС
               </GameButton>
             </div>
@@ -141,29 +141,29 @@ export function DebtDialog() {
         <div className="hint">
           У вас наличными {money(me.cash)}. Продав и заложив всё, можно собрать до {money(liq)}.
         </div>
-        <div className="row wrap center-x">
-          <GameButton color="green" size="lg" icon="cash" disabled={me.cash < d.amount} onClick={() => act({ type: 'payDebt' })}>
+        <div className="actions-grid">
+          <GameButton color="green" icon="cash" disabled={me.cash < d.amount} onClick={() => act({ type: 'payDebt' })}>
             ЗАПЛАТИТЬ
           </GameButton>
           <GameButton color="purple" icon="briefcase" onClick={() => store().set({ dialog: 'props', propsMode: 'mortgage', propsOwner: me.id })}>
             ДОБЫТЬ ДЕНЬГИ
           </GameButton>
+          {!confirm ? (
+            <GameButton span color="red" size="sm" icon="bomb" onClick={() => setConfirm(true)}>
+              ОБЪЯВИТЬ БАНКРОТСТВО
+            </GameButton>
+          ) : (
+            <>
+              <div className="small span-text">Точно? Вы выбываете из игры.</div>
+              <GameButton color="red" size="sm" onClick={() => act({ type: 'bankrupt' })}>
+                ДА, БАНКРОТ
+              </GameButton>
+              <GameButton color="gray" size="sm" onClick={() => setConfirm(false)}>
+                НЕТ
+              </GameButton>
+            </>
+          )}
         </div>
-        {!confirm ? (
-          <GameButton color="red" size="sm" icon="bomb" onClick={() => setConfirm(true)}>
-            ОБЪЯВИТЬ БАНКРОТСТВО
-          </GameButton>
-        ) : (
-          <div className="row center-x">
-            <span className="small">Точно? Вы выбываете из игры.</span>
-            <GameButton color="red" size="sm" onClick={() => act({ type: 'bankrupt' })}>
-              ДА
-            </GameButton>
-            <GameButton color="gray" size="sm" onClick={() => setConfirm(false)}>
-              НЕТ
-            </GameButton>
-          </div>
-        )}
       </div>
     </Modal>
   );
@@ -246,7 +246,7 @@ function CellActions({ s, i, pid }: { s: GameState; i: number; pid: string }) {
       </GameButton>,
     );
   if (!btns.length) return null;
-  return <div className="row wrap center-x">{btns}</div>;
+  return <div className="actions-grid odd-full">{btns}</div>;
 }
 
 // ───────────── Моя недвижимость ─────────────
@@ -359,7 +359,7 @@ function PropRow({ s, i, pid, manage }: { s: GameState; i: number; pid: string; 
   return (
     <div className="inner" style={{ padding: '0.55rem', boxShadow: `inset 0.35rem 0 0 ${groupColor(s, i)}` }}>
       <div className="row between">
-        <button className="title-font" style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', textAlign: 'left', fontSize: '0.95rem', padding: 0 }} onClick={() => store().set({ selectedCell: i })}>
+        <button className="title-font prop-name-btn" style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', textAlign: 'left', fontSize: '0.95rem', padding: '0.2rem 0' }} onClick={() => store().set({ selectedCell: i })}>
           {c.name}
         </button>
         <div className="row" style={{ gap: '0.15rem' }}>

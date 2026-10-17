@@ -60,13 +60,9 @@ export function LobbyScreen() {
                   </div>
                   <div className="seat-card__meta">
                     {seat.isBot ? (
-                      isHost ? (
-                        <Segmented value={seat.botLevel} onChange={(lv) => net.send({ t: 'setBotLevel', seatId: seat.id, level: lv })} options={(['easy', 'medium', 'hard'] as BotLevel[]).map((lv) => ({ value: lv, label: LEVEL_NAMES[lv] }))} />
-                      ) : (
-                        <span className="tag blue">
-                          <Icon name="robot" /> БОТ · {LEVEL_NAMES[seat.botLevel]}
-                        </span>
-                      )
+                      <span className="tag blue">
+                        <Icon name="robot" /> БОТ · {LEVEL_NAMES[seat.botLevel]}
+                      </span>
                     ) : (
                       <>
                         <span className="tag gray">
@@ -113,6 +109,11 @@ export function LobbyScreen() {
                   </div>
                 )}
                 {isHost && !seat.isHost && <GameButton round size="sm" color="red" icon="close" title="Убрать" onClick={() => net.send({ t: 'removeSeat', seatId: seat.id })} />}
+                {seat.isBot && isHost && (
+                  <div className="seat-card__full">
+                    <Segmented stretch value={seat.botLevel} onChange={(lv) => net.send({ t: 'setBotLevel', seatId: seat.id, level: lv })} options={(['easy', 'medium', 'hard'] as BotLevel[]).map((lv) => ({ value: lv, label: LEVEL_NAMES[lv] }))} />
+                  </div>
+                )}
               </div>
             ))}
             {room.seats.length < room.settings.maxPlayers &&
@@ -121,7 +122,7 @@ export function LobbyScreen() {
                   {k === 0 && isHost ? (
                     <div className="col" style={{ alignItems: 'center' }}>
                       <div>Свободное место — ждём друзей или добавьте бота</div>
-                      <Segmented value={addLevel} onChange={setAddLevel} options={(['easy', 'medium', 'hard'] as BotLevel[]).map((lv) => ({ value: lv, label: LEVEL_NAMES[lv] }))} />
+                      <Segmented stretch value={addLevel} onChange={setAddLevel} options={(['easy', 'medium', 'hard'] as BotLevel[]).map((lv) => ({ value: lv, label: LEVEL_NAMES[lv] }))} />
                       <GameButton size="sm" color="green" icon="robot" onClick={() => net.send({ t: 'addBot', level: addLevel })}>
                         ДОБАВИТЬ БОТА
                       </GameButton>

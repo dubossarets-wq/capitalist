@@ -37,9 +37,9 @@ export function TradeDialog() {
   return (
     <Modal title="Торговля" onClose={close} width="min(58rem, 96vw)">
       <div className="label">С кем торгуем?</div>
-      <div className="row wrap" style={{ marginBottom: '0.7rem' }}>
+      <div className="partner-grid" style={{ marginBottom: '0.7rem', ['--n' as any]: Math.min(4, Math.max(1, others.length)) }}>
         {others.map((p) => (
-          <button key={p.id} className={`pick-card ${d.to === p.id ? 'active' : ''}`} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0.7rem' }} onClick={() => (sound.play('click'), setD({ ...d, to: p.id, getCells: [], getMoney: 0 }))}>
+          <button key={p.id} className={`pick-card ${d.to === p.id ? 'active' : ''}`} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.5rem 0.4rem', minWidth: 0 }} onClick={() => (sound.play('click'), setD({ ...d, to: p.id, getCells: [], getMoney: 0 }))}>
             <Avatar id={p.avatar} color={p.color} size={2} bot={p.isBot} />
             <span>
               <span className="title-font" style={{ display: 'block' }}>{p.name}</span>
@@ -49,15 +49,15 @@ export function TradeDialog() {
         ))}
       </div>
       {partner && (
-        <div className="row wrap" style={{ alignItems: 'stretch', gap: '0.8rem' }}>
+        <div className="trade-sides">
           <TradeSide s={s} title="ВЫ ОТДАЁТЕ" color="#ff8a8a" pid={me.id} cells={d.giveCells} moneyVal={d.giveMoney} maxMoney={me.cash} onToggle={(i) => toggle('giveCells', i)} onMoney={(v) => setD({ ...d, giveMoney: v })} />
-          <div className="col center-x" style={{ alignSelf: 'center' }}>
-            <Icon name="handshake" size="3rem" />
+          <div className="trade-sides__sep">
+            <Icon name="handshake" size="2.6rem" />
           </div>
           <TradeSide s={s} title={`ВЫ ПОЛУЧАЕТЕ`} color="#6dff8e" pid={partner.id} cells={d.getCells} moneyVal={d.getMoney} maxMoney={partner.cash} onToggle={(i) => toggle('getCells', i)} onMoney={(v) => setD({ ...d, getMoney: v })} />
         </div>
       )}
-      <div className="row between wrap" style={{ marginTop: '0.8rem' }}>
+      <div className="trade-footer">
         <div className="hint">
           По номиналу: отдаёте {money(giveValue)}, получаете {money(getValue)}
           {err && <div style={{ color: '#ffb3b3' }}>{err}</div>}
@@ -66,6 +66,7 @@ export function TradeDialog() {
           color="green"
           size="lg"
           icon="handshake"
+          center
           disabled={!!err}
           onClick={() => {
             act({ type: 'proposeTrade', ...d });
@@ -105,7 +106,7 @@ function TradeSide(props: { s: GameState; title: string; color: string; pid: str
   return (
     <div className="inner grow" style={{ minWidth: '15rem' }}>
       <div className="title-font" style={{ color: props.color, marginBottom: '0.4rem' }}>{props.title}</div>
-      <div className="row wrap" style={{ gap: '0.35rem', marginBottom: '0.6rem' }}>
+      <div className="prop-grid" style={{ marginBottom: '0.6rem' }}>
         {owned.length === 0 && <span className="hint">У игрока {p.name} нет недвижимости</span>}
         {owned.map((i) => (
           <MiniProp key={i} s={s} i={i} selected={props.cells.includes(i)} disabled={groupHasBuildings(s, i)} onClick={() => props.onToggle(i)} />
@@ -113,7 +114,7 @@ function TradeSide(props: { s: GameState; title: string; color: string; pid: str
       </div>
       <div className="label">Деньги: {money(props.moneyVal)}</div>
       <Range value={props.moneyVal} min={0} max={Math.max(0, Math.floor(props.maxMoney / step) * step)} step={step} onChange={props.onMoney} />
-      <div className="row" style={{ gap: '0.3rem', marginTop: '0.4rem', flexWrap: 'wrap' }}>
+      <div className="step-grid" style={{ marginTop: '0.4rem' }}>
         {[-100, -10, 10, 50, 100, 500].map((inc) => (
           <button key={inc} className="chip-btn" onClick={() => props.onMoney(Math.max(0, Math.min(props.maxMoney, props.moneyVal + inc)))}>
             {inc > 0 ? `+${inc}` : inc}
@@ -145,21 +146,22 @@ export function IncomingTrade() {
         <Avatar id={from.avatar} color={from.color} size={3} bot={from.isBot} />
         <div className="title-font" style={{ fontSize: '1.2rem' }}>{from.name} предлагает обмен</div>
       </div>
-      <div className="row wrap" style={{ alignItems: 'stretch', gap: '0.8rem' }}>
-        <div className="inner grow" style={{ minWidth: '14rem' }}>
+      <div className="trade-sides">
+        <div className="inner grow" style={{ minWidth: 0 }}>
           <div className="title-font" style={{ color: '#6dff8e', marginBottom: '0.4rem' }}>ВЫ ПОЛУЧАЕТЕ</div>
           {t.giveMoney > 0 && <div className="money" style={{ fontSize: '1.4rem' }}>{money(t.giveMoney)}</div>}
-          <div className="row wrap" style={{ gap: '0.35rem' }}>
+          <div className="prop-grid">
             {t.giveCells.map((i) => (
               <MiniProp key={i} s={s} i={i} onClick={() => store().set({ selectedCell: i })} />
             ))}
           </div>
           {!t.giveMoney && !t.giveCells.length && <div className="hint">ничего</div>}
         </div>
-        <div className="inner grow" style={{ minWidth: '14rem' }}>
+        <div className="trade-sides__sep" />
+        <div className="inner grow" style={{ minWidth: 0 }}>
           <div className="title-font" style={{ color: '#ff8a8a', marginBottom: '0.4rem' }}>ВЫ ОТДАЁТЕ</div>
           {t.getMoney > 0 && <div className="money" style={{ fontSize: '1.4rem' }}>{money(t.getMoney)}</div>}
-          <div className="row wrap" style={{ gap: '0.35rem' }}>
+          <div className="prop-grid">
             {t.getCells.map((i) => (
               <MiniProp key={i} s={s} i={i} onClick={() => store().set({ selectedCell: i })} />
             ))}
@@ -168,8 +170,8 @@ export function IncomingTrade() {
         </div>
       </div>
       {err && <div className="tag red" style={{ marginTop: '0.5rem', whiteSpace: 'normal' }}>{err}</div>}
-      <div className="row wrap center-x" style={{ marginTop: '0.9rem' }}>
-        <GameButton color="green" size="lg" icon="check" disabled={!!err} onClick={() => act({ type: 'acceptTrade', tradeId: t.id })}>
+      <div className="actions-grid" style={{ marginTop: '0.9rem' }}>
+        <GameButton span color="green" size="lg" icon="check" disabled={!!err} onClick={() => act({ type: 'acceptTrade', tradeId: t.id })}>
           ПРИНЯТЬ
         </GameButton>
         <GameButton

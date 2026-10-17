@@ -20,9 +20,10 @@ import {
   textSprite,
   canvasTexture,
   setMaxAnisotropy,
+  tagOffset,
 } from './textures';
 import { buildDecor, type Decor } from './decor';
-import { buildToken, disposeObject } from './tokens';
+import { buildToken, disposeObject, tokenThumbnail } from './tokens';
 
 export type Quality = 'low' | 'medium' | 'high';
 
@@ -36,6 +37,8 @@ export interface TagInfo {
 interface TokenView {
   id: string;
   obj: THREE.Group;
+  /** Плоский значок фишки для 2D-режима */
+  icon?: THREE.Sprite;
   cell: number;
   inJail: boolean;
   hidden: boolean;
@@ -116,6 +119,11 @@ export class BoardScene {
   private stampTex: THREE.Texture | null = null;
   private down: { x: number; y: number; t: number } | null = null;
   private dirty = true;
+  /** Камера 2D-режима: строго сверху, без перспективы */
+  private ortho = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.5, 200);
+  viewMode: '3d' | '2d' = '3d';
+  /** Сколько пикселей сверху и снизу заняты интерфейсом — поле вписывается между ними */
+  private safe = { top: 0, bottom: 0 };
   /** Снижение разрешения, если устройство не тянет даже низкое качество */
   private resScale = 1;
   private lastRender = 0;
@@ -140,7 +148,7 @@ export class BoardScene {
     container.appendChild(this.renderer.domElement);
     this.renderer.domElement.style.touchAction = 'none';
 
-    this.camera = new THREE.PerspectiveCamera(42, 1, 0.1, 200);
+    this.camera = new THREE.PerspectiveCamera(42, 1, 0.5, 160);
     this.camera.position.set(0, 12, 10);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
@@ -254,6 +262,11 @@ export class BoardScene {
     return dpr >= 1.75 ? 1.5 : dpr > 1.2 ? 1.25 : 1;
   }
 
+  /** Камера, через которую сейчас смотрим */
+  get activeCamera(): THREE.Camera {
+    return this.viewMode === '2d' ? this.ortho : this.camera;
+  }
+
   private resize = () => {
     this.dirty = true;
     const w = this.container.clientWidth || window.innerWidth;
@@ -262,7 +275,8 @@ export class BoardScene {
     this.renderer.domElement.style.width = '100%';
     this.renderer.domElement.style.height = '100%';
     this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
+    this.applyViewOffset(w, h);
+    this.fitOrtho();
   };
 
   // ───────────── Построение доски ─────────────
@@ -311,6 +325,7 @@ export class BoardScene {
     );
     table.rotation.x = -Math.PI / 2;
     table.receiveShadow = true;
+    table.renderOrder = -2;
     this.root.add(table);
     // Тень-подложка под доской
     const shadowBlob = new THREE.Mesh(
@@ -318,7 +333,8 @@ export class BoardScene {
       new THREE.MeshBasicMaterial({ map: blobTexture(), transparent: true, depthWrite: false, opacity: 0.55 }),
     );
     shadowBlob.rotation.x = -Math.PI / 2;
-    shadowBlob.position.y = 0.01;
+    shadowBlob.position.y = 0.02;
+    shadowBlob.renderOrder = -1;
     this.root.add(shadowBlob);
 
     // Основание доски
@@ -330,9 +346,9 @@ export class BoardScene {
     base.castShadow = true;
     base.receiveShadow = true;
     this.root.add(base);
-    const grout = new THREE.Mesh(new THREE.PlaneGeometry(L + 0.1, L + 0.1), new THREE.MeshStandardMaterial({ color: theme.grout, roughness: 0.7 }));
+    const grout = new THREE.Mesh(new THREE.PlaneGeometry(L + 0.1, L + 0.1), decal(new THREE.MeshStandardMaterial({ color: theme.grout, roughness: 0.7 }), 1));
     grout.rotation.x = -Math.PI / 2;
-    grout.position.y = BOARD_TOP + 0.002;
+    grout.position.y = BOARD_TOP + 0.004;
     grout.receiveShadow = true;
     this.root.add(grout);
     // Золотая окантовка
@@ -345,9 +361,9 @@ export class BoardScene {
 
     // Центр поля
     const inner = L - 2 * CORNER - 0.08;
-    const center = new THREE.Mesh(new THREE.PlaneGeometry(inner, inner), new THREE.MeshStandardMaterial({ map: centerTexture(theme, board.name, this.texScale() > 1 ? 1.5 : 1), roughness: 0.6 }));
+    const center = new THREE.Mesh(new THREE.PlaneGeometry(inner, inner), decal(new THREE.MeshStandardMaterial({ map: centerTexture(theme, board.name, this.texScale() > 1 ? 1.5 : 1), roughness: 0.6 }), 2));
     center.rotation.x = -Math.PI / 2;
-    center.position.y = BOARD_TOP + 0.006;
+    center.position.y = BOARD_TOP + 0.01;
     center.receiveShadow = true;
     this.root.add(center);
 
@@ -376,7 +392,7 @@ export class BoardScene {
     this.houseCount = [];
     board.cells.forEach((cell, i) => {
       const p = this.layout[i];
-      const tex = p.corner ? cornerTexture(cell, theme, salary, this.texScale()) : cellTexture(board, cell, theme, this.texScale());
+      const tex = p.corner ? cornerTexture(cell, theme, salary, p.side, this.texScale()) : cellTexture(board, cell, theme, p.side, this.texScale());
       const top = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.55 });
       const m = new THREE.Mesh(new THREE.BoxGeometry(p.w - 0.05, CELL_H, p.d - 0.05), [sideMat, sideMat, top, sideMat, sideMat, sideMat]);
       m.position.set(p.x, BOARD_TOP + CELL_H / 2, p.z);
@@ -393,9 +409,12 @@ export class BoardScene {
       if (hasTag && !p.corner) {
         const canvas = makePriceCanvas(this.texScale());
         const ttex = canvasTexture(canvas);
-        const tag = new THREE.Mesh(new THREE.PlaneGeometry(0.86, 0.3), new THREE.MeshStandardMaterial({ map: ttex, transparent: true, roughness: 0.4 }));
-        tag.rotation.x = -Math.PI / 2;
-        tag.position.set(0, CELL_H / 2 + 0.004, 0.57);
+        const tag = new THREE.Mesh(new THREE.PlaneGeometry(0.86, 0.3), decal(new THREE.MeshStandardMaterial({ map: ttex, transparent: true, roughness: 0.4 }), 3));
+        // Ценник лежит горизонтально для игрока снизу, независимо от стороны поля
+        const [wx, wz] = tagOffset(p.side);
+        const [lx, lz] = toLocal(p.rot, wx, wz);
+        tag.rotation.set(-Math.PI / 2, 0, -p.rot);
+        tag.position.set(lx, CELL_H / 2 + 0.012, lz);
         m.add(tag);
         this.tags[i] = { canvas, tex: ttex as THREE.CanvasTexture, mesh: tag, key: '' };
       }
@@ -412,7 +431,68 @@ export class BoardScene {
     this.decor = buildDecor(theme, L, this.quality);
     this.root.add(this.decor.group);
 
+    if (this.decor) this.decor.group.visible = this.viewMode === '3d';
+    this.fitOrtho();
     this.overview(true);
+  }
+
+  // ───────────── 2D / 3D ─────────────
+
+  setViewMode(mode: '3d' | '2d') {
+    if (this.viewMode === mode && this.controls.object === this.activeCamera) return;
+    this.viewMode = mode;
+    this.dirty = true;
+    const flat = mode === '2d';
+    (this.controls as any).object = flat ? this.ortho : this.camera;
+    this.controls.enableRotate = !flat;
+    this.controls.screenSpacePanning = flat;
+    this.controls.minZoom = 0.9;
+    this.controls.maxZoom = 5;
+    if (this.decor) this.decor.group.visible = !flat;
+    for (const t of this.tokens.values()) this.applyTokenView(t);
+    this.fitOrtho();
+    this.overview(true);
+  }
+
+  private applyTokenView(t: TokenView) {
+    const flat = this.viewMode === '2d';
+    const body = t.obj.getObjectByName('body');
+    if (body) body.visible = !flat;
+    if (t.icon) t.icon.visible = flat;
+  }
+
+  /** Ортографическая камера: поле целиком помещается в свободную область экрана */
+  private fitOrtho() {
+    const w = this.container.clientWidth || window.innerWidth;
+    const h = this.container.clientHeight || window.innerHeight;
+    const availH = Math.max(120, h - this.safe.top - this.safe.bottom);
+    const size = this.L * 1.04;
+    const perPx = Math.max(size / availH, size / Math.max(120, w - 16));
+    this.ortho.left = (-w / 2) * perPx;
+    this.ortho.right = (w / 2) * perPx;
+    this.ortho.top = (h / 2) * perPx;
+    this.ortho.bottom = (-h / 2) * perPx;
+    this.applyViewOffset(w, h);
+  }
+
+  /** Сдвиг изображения так, чтобы центр поля оказался в центре свободной области */
+  private applyViewOffset(w: number, h: number) {
+    const dy = (this.safe.bottom - this.safe.top) / 2;
+    for (const cam of [this.camera, this.ortho] as (THREE.PerspectiveCamera | THREE.OrthographicCamera)[]) {
+      if (Math.abs(dy) < 0.5) cam.clearViewOffset();
+      else cam.setViewOffset(w, h, 0, dy, w, h);
+      cam.updateProjectionMatrix();
+    }
+  }
+
+  /** Интерфейс сообщает, какие полосы экрана заняты панелями */
+  setSafeArea(top: number, bottom: number) {
+    const t = Math.max(0, Math.round(top));
+    const b = Math.max(0, Math.round(bottom));
+    if (t === this.safe.top && b === this.safe.bottom) return;
+    this.safe = { top: t, bottom: b };
+    this.resize();
+    if (this.viewMode === '2d' && !this.menuMode) this.overview(true);
   }
 
   private clearBoard() {
@@ -493,9 +573,9 @@ export class BoardScene {
     top.color.set(mortgaged ? '#9a9a9a' : '#ffffff');
     if (mortgaged && !this.stamps[i]) {
       if (!this.stampTex) this.stampTex = mortgageStampTexture();
-      const s = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), new THREE.MeshBasicMaterial({ map: this.stampTex, transparent: true, depthWrite: false }));
-      s.rotation.x = -Math.PI / 2;
-      s.position.set(0, CELL_H / 2 + 0.008, -0.05);
+      const s = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), decal(new THREE.MeshBasicMaterial({ map: this.stampTex, transparent: true, depthWrite: false }), 4));
+      s.rotation.set(-Math.PI / 2, 0, -this.layout[i].rot);
+      s.position.set(0, CELL_H / 2 + 0.02, 0);
       cell.add(s);
       this.stamps[i] = s;
     } else if (!mortgaged && this.stamps[i]) {
@@ -594,9 +674,12 @@ export class BoardScene {
       }
       const obj = buildToken(p.token, p.color);
       obj.userData.key = `${p.token}|${p.color}`;
+      const icon = makeTokenIcon(p.token, p.color);
+      obj.add(icon);
       obj.position.set(this.layout[0]?.x ?? 0, CELL_TOP, this.layout[0]?.z ?? 0);
       this.root.add(obj);
-      this.tokens.set(p.id, { id: p.id, obj, cell: existing?.cell ?? 0, inJail: existing?.inJail ?? false, hidden: false, moving: false });
+      this.tokens.set(p.id, { id: p.id, obj, icon, cell: existing?.cell ?? 0, inJail: existing?.inJail ?? false, hidden: false, moving: false });
+      this.applyTokenView(this.tokens.get(p.id)!);
     }
   }
 
@@ -754,7 +837,9 @@ export class BoardScene {
     if (this.dice.length < 2) return;
     const inner = this.L - 2 * CORNER;
     const restY = BOARD_TOP + DIE / 2 + 0.006;
-    const camDir = new THREE.Vector3().subVectors(this.camera.position, this.controls.target).setY(0).normalize();
+    const camDir = new THREE.Vector3().subVectors(this.activeCamera.position, this.controls.target).setY(0);
+    if (camDir.lengthSq() < 1e-8) camDir.set(0, 0, 1);
+    camDir.normalize();
     const side = new THREE.Vector3(-camDir.z, 0, camDir.x);
     const ends = [
       side.clone().multiplyScalar(-0.42 + (Math.random() - 0.5) * 0.2).addScaledVector(camDir, (Math.random() - 0.5) * 0.4),
@@ -799,12 +884,27 @@ export class BoardScene {
   private fitDistance() {
     const vfov = (this.camera.fov * Math.PI) / 180;
     const hfov = 2 * Math.atan(Math.tan(vfov / 2) * this.camera.aspect);
+    const h = this.container.clientHeight || window.innerHeight;
+    const avail = this.menuMode ? 1 : Math.max(0.35, (h - this.safe.top - this.safe.bottom) / h);
     const half = this.L * 0.62;
-    return Math.max(half / Math.tan(vfov / 2) * 0.95, half / Math.tan(hfov / 2) * 1.0);
+    return Math.max((half / (Math.tan(vfov / 2) * avail)) * 0.95, half / Math.tan(hfov / 2));
   }
 
   overview(instant = false) {
     this.follow = null;
+    if (this.viewMode === '2d') {
+      this.focusPoint = null;
+      this.focusDist = null;
+      this.controls.target.set(0, 0, 0);
+      // Чуть смещено к нижнему краю, чтобы «верх» экрана совпадал с верхом поля
+      this.ortho.position.set(0, 60, 0.001);
+      this.ortho.zoom = 1;
+      this.ortho.updateProjectionMatrix();
+      this.ortho.lookAt(0, 0, 0);
+      this.controls.update();
+      this.dirty = true;
+      return;
+    }
     const dist = this.fitDistance();
     this.controls.maxDistance = Math.max(dist * 1.8, 20);
     const elev = 0.95; // ~54°
@@ -846,6 +946,7 @@ export class BoardScene {
   }
 
   private updateCamera(dt: number): boolean {
+    if (this.viewMode === '2d') return false;
     const idle = !this.userActive && this.time - this.lastUser > 3500;
     if (this.menuMode) {
       const a = this.time * 0.00006;
@@ -859,8 +960,9 @@ export class BoardScene {
     if (!idle) return false;
     let want = this.follow ? this.follow.position.clone().setY(0) : this.focusPoint?.clone() ?? null;
     if (!want) return false;
-    // На узком (портретном) экране смотрим ближе к центру доски, чтобы поле оставалось в кадре
-    if (this.camera.aspect < 1) want.multiplyScalar(0.25 + 0.5 * this.camera.aspect);
+    // На узком экране смотрим почти прямо на фишку (лишь чуть ближе к центру),
+    // чтобы фишки на левом и правом рядах были в середине кадра, а не у края
+    if (this.camera.aspect < 1 && this.follow) want.multiplyScalar(0.88);
     const before = this.camera.position.clone();
     const k = 1 - Math.exp(-dt * 2.6);
     const delta = want.clone().sub(this.controls.target).multiplyScalar(k);
@@ -1131,7 +1233,7 @@ export class BoardScene {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const ndc = new THREE.Vector2(((x - rect.left) / rect.width) * 2 - 1, -((y - rect.top) / rect.height) * 2 + 1);
     const ray = new THREE.Raycaster();
-    ray.setFromCamera(ndc, this.camera);
+    ray.setFromCamera(ndc, this.activeCamera);
     const hit = ray.intersectObjects(this.cells, false)[0];
     if (hit) this.onCellClick?.(hit.object.userData.index as number);
   }
@@ -1229,7 +1331,7 @@ export class BoardScene {
     }
     this.lastRender = now;
     this.dirty = false;
-    this.renderer.render(this.scene, this.camera);
+    this.renderer.render(this.scene, this.activeCamera);
   };
 
   dispose() {
@@ -1263,6 +1365,34 @@ function faceQuat(v: number): THREE.Quaternion {
       return q.setFromAxisAngle(X, Math.PI / 2);
   }
   return q;
+}
+
+/** Материал «наклейки»: рисуется поверх соседнего слоя без мерцания на любых видеочипах */
+function decal<M extends THREE.Material>(m: M, level: number): M {
+  m.polygonOffset = true;
+  m.polygonOffsetFactor = -level;
+  m.polygonOffsetUnits = -level * 2;
+  return m;
+}
+
+/** Смещение в мировых координатах → локальные координаты клетки с поворотом rot */
+function toLocal(rot: number, wx: number, wz: number): [number, number] {
+  const c = Math.cos(rot);
+  const s = Math.sin(rot);
+  return [wx * c - wz * s, wx * s + wz * c];
+}
+
+/** Плоский значок фишки (для вида сверху) */
+function makeTokenIcon(token: string, color: string) {
+  const url = tokenThumbnail(token, color, 192);
+  const tex = new THREE.TextureLoader().load(url);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true }));
+  sprite.scale.set(0.82, 0.82, 1);
+  sprite.position.y = 0.55;
+  sprite.renderOrder = 6;
+  sprite.visible = false;
+  return sprite;
 }
 
 function lerpAngle(a: number, b: number, t: number) {

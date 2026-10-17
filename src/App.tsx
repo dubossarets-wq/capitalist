@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore, store } from './store';
-import { initScene, showMenuScene } from './three/sceneHost';
+import { initScene, showMenuScene, getScene } from './three/sceneHost';
 import { THEMES } from './three/themes';
 import { sound } from './audio/sound';
 import { MainMenu } from './ui/screens/MainMenu';
@@ -16,6 +16,9 @@ import { GameScreen } from './ui/game/GameScreen';
 import { Toasts } from './ui/game/Overlays';
 import { net } from './net/netClient';
 import { STATIC_SITE } from './net/staticMode';
+
+// Доступ для автотестов интерфейса (только чтение состояния и служебные действия)
+(window as any).__cap = { store: useStore };
 
 export function App() {
   const screen = useStore((s) => s.screen);
@@ -80,6 +83,11 @@ export function App() {
   useEffect(() => {
     sound.setVolumes(prefs.sfx, prefs.music);
   }, [prefs.sfx, prefs.music]);
+
+  // Переключение 2D/3D во время партии
+  useEffect(() => {
+    if (ready && screen === 'game') getScene()?.setViewMode(prefs.view);
+  }, [ready, screen, prefs.view]);
 
   // Облегчённые стили интерфейса на слабых устройствах
   useEffect(() => {

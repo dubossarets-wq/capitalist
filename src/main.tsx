@@ -9,7 +9,19 @@ import './styles/game.css';
 import { App } from './App';
 
 // Запуск с ярлыка на экране «Домой» iPhone/iPad
-if ((navigator as any).standalone) document.documentElement.classList.add('ios-standalone');
+// Высоту берём по размеру экрана: в этом режиме iOS занижает высоту страницы на строку состояния
+if ((navigator as any).standalone) {
+  const root = document.documentElement;
+  root.classList.add('ios-standalone');
+  const fit = () => {
+    const portrait = window.matchMedia('(orientation: portrait)').matches;
+    const full = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+    root.style.setProperty('--app-h', `${Math.max(full, window.innerHeight)}px`);
+  };
+  fit();
+  window.addEventListener('resize', fit);
+  window.addEventListener('orientationchange', () => setTimeout(fit, 300));
+}
 
 createRoot(document.getElementById('root')!).render(<App />);
 

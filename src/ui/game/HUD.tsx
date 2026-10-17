@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { GameState } from '../../../shared/types';
 import {
   canBuild,
@@ -45,8 +45,17 @@ export function PlayersPanel() {
   const cash = useStore((x) => x.cashView);
   const emotes = useStore((x) => x.emotes);
   const now = useServerNow(s.settings.turnTimer ? 500 : 60000);
+  const ref = useRef<HTMLDivElement>(null);
+  // Высота списка игроков — под ним выстраиваются кнопки и уведомления на телефоне
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => document.documentElement.style.setProperty('--players-h', `${el.offsetHeight}px`));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   return (
-    <div className="players-panel">
+    <div ref={ref} className="players-panel" style={{ ['--cols' as any]: s.players.length <= 3 ? s.players.length : s.players.length === 4 ? 2 : 3 }}>
       {s.players.map((p, idx) => {
         const active = idx === s.current && s.phase !== 'gameOver';
         const cells = ownedCells(s, p.id);
@@ -115,110 +124,113 @@ function hasAny(s: GameState, pid: string, fn: (s: GameState, pid: string, i: nu
   return ownedCells(s, pid).some((i) => !fn(s, pid, i));
 }
 
-export function ActionBar() {
+/**
+ * Нижняя панель: все кнопки в одном потоке, поэтому они никогда не перекрывают друг друга.
+ * Верхний ряд — второстепенные действия, нижний — главное действие хода или статус.
+ */
+export function BottomDock() {
   const { s, me, cur, busy, isMyTurn } = useGame();
   const dialog = useStore((x) => x.dialog);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Сообщаем высоту панели — по ней ограничивается список игроков
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => document.documentElement.style.setProperty('--dock-h', `${el.offsetHeight}px`));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   if (s.phase === 'gameOver') return null;
-  if (!me || me.bankrupt) {
-    return (
-      <div className="action-bar">
-        <div className="status-pill">
-          <Icon name="eye" size="1.8rem" /> {me?.bankrupt ? 'Вы банкрот — наблюдаете за игрой' : 'Наблюдение'}
-        </div>
+  const alive = !!me && !me.bankrupt;
+  const myMove = alive && isMyTurn && !busy && s.phase !== 'auction' && !(s.phase === 'debt' && s.debt?.player !== me!.id);
+  const manage = myMove && canManage(s, me!.id) && (s.phase === 'roll' || s.phase === 'action');
+  const canB = manage && hasAny(s, me!.id, canBuild);
+  const canS = manage && (hasAny(s, me!.id, canSellBuilding) || hasAny(s, me!.id, canSellProperty));
+  const canM = manage && hasAny(s, me!.id, canMortgage);
+  const canU = manage && hasAny(s, me!.id, canUnmortgage);
+  const open = (mode: 'build' | 'sell' | 'mortgage' | 'unmortgage') => store().set({ dialog: 'props', propsMode: mode, propsOwner: me!.id });
+  const outgoing = alive ? s.trades.filter((t) => t.status === 'pending' && t.from === me!.id).length : 0;
+
+  let primary: JSX.Element | null = null;
+  if (!alive) {
+    primary = (
+      <div className="status-pill">
+        <Icon name="eye" size="1.8rem" /> {me?.bankrupt ? 'Вы банкрот — наблюдаете за игрой' : 'Наблюдение'}
       </div>
     );
-  }
-  if (busy || !isMyTurn || s.phase === 'auction' || (s.phase === 'debt' && s.debt?.player !== me.id)) {
+  } else if (!myMove) {
     const who = s.phase === 'debt' ? playerById(s, s.debt?.player) : cur;
     const text = s.phase === 'auction' ? 'Идёт аукцион' : s.phase === 'debt' ? `${who?.name} ищет деньги` : isMyTurn ? 'Ваш ход' : `Ходит ${who?.name}`;
-    if (isMyTurn && busy) return null;
-    return (
-      <div className="action-bar">
-        {who && (
-          <div className="status-pill" style={{ boxShadow: `0 0 0 0.16rem ${who.color}, 0 0.4rem 1rem rgba(0,0,0,.35)` }}>
-            <Avatar id={who.avatar} color={who.color} size={2} bot={who.isBot} />
-            <span className="dots">{text}</span>
-          </div>
-        )}
+    primary = who ? (
+      <div className="status-pill" style={{ boxShadow: `0 0 0 0.16rem ${who.color}, 0 0.4rem 1rem rgba(0,0,0,.35)` }}>
+        <Avatar id={who.avatar} color={who.color} size={2} bot={who.isBot} />
+        <span className="dots">{text}</span>
       </div>
+    ) : null;
+  } else if (s.phase === 'roll') {
+    primary = (
+      <>
+        {me!.inJail && (
+          <GameButton color="orange" icon="cash" disabled={me!.cash < jailFine(s)} onClick={() => act({ type: 'payJail' })} sub="и бросить кубики">
+            ВЫЙТИ ЗА {money(jailFine(s))}
+          </GameButton>
+        )}
+        {me!.inJail && me!.jailFreeCards > 0 && (
+          <GameButton color="teal" icon="key" onClick={() => act({ type: 'useJailCard' })} sub={`есть ${me!.jailFreeCards}`}>
+            КАРТА
+          </GameButton>
+        )}
+        <GameButton color="green" size="xl" icon="dice" pulse onClick={() => act({ type: 'roll' })} sub={me!.inJail ? `дубль — свобода (${me!.jailTurns + 1} из 3)` : s.rolledThisTurn ? 'дубль — ещё бросок!' : undefined}>
+          БРОСИТЬ КУБИКИ
+        </GameButton>
+      </>
+    );
+  } else if (s.phase === 'action') {
+    primary = (
+      <GameButton color="red" size="xl" icon="flag" pulse onClick={() => act({ type: 'endTurn' })}>
+        ЗАВЕРШИТЬ ХОД
+      </GameButton>
     );
   }
 
-  const manage = canManage(s, me.id) && (s.phase === 'roll' || s.phase === 'action');
-  const canB = manage && hasAny(s, me.id, canBuild);
-  const canS = manage && (hasAny(s, me.id, canSellBuilding) || hasAny(s, me.id, canSellProperty));
-  const canM = manage && hasAny(s, me.id, canMortgage);
-  const canU = manage && hasAny(s, me.id, canUnmortgage);
-  const open = (mode: 'build' | 'sell' | 'mortgage' | 'unmortgage') => store().set({ dialog: 'props', propsMode: mode, propsOwner: me.id });
-
-  if (dialog) return null;
-
+  const hidden = !!dialog;
   return (
-    <div className="action-bar">
-      {s.phase === 'roll' && me.inJail && (
-        <>
-          <GameButton color="orange" icon="cash" disabled={me.cash < jailFine(s)} onClick={() => act({ type: 'payJail' })} sub="и бросить кубики">
-            ЗАПЛАТИТЬ {money(jailFine(s))}
-          </GameButton>
-          {me.jailFreeCards > 0 && (
-            <GameButton color="teal" icon="key" onClick={() => act({ type: 'useJailCard' })} sub={`есть ${me.jailFreeCards}`}>
-              КАРТА СВОБОДЫ
+    <div className="dock" ref={ref} style={{ visibility: hidden ? 'hidden' : undefined }}>
+      {alive && (
+        <div className="dock__row dock__secondary">
+          {s.settings.rules.trading && (
+            <GameButton size="sm" color="orange" icon="handshake" badge={outgoing || undefined} onClick={() => store().set({ dialog: 'trade', tradeDraft: null })}>
+              ТОРГОВЛЯ
             </GameButton>
           )}
-        </>
-      )}
-      {s.phase === 'roll' && (
-        <GameButton color="green" size="xl" icon="dice" pulse onClick={() => act({ type: 'roll' })} sub={me.inJail ? `дубль — свобода (попытка ${me.jailTurns + 1} из 3)` : s.rolledThisTurn ? 'дубль — ещё бросок!' : undefined}>
-          БРОСИТЬ КУБИКИ
-        </GameButton>
-      )}
-      {s.phase === 'action' && (
-        <GameButton color="red" size="xl" icon="flag" pulse onClick={() => act({ type: 'endTurn' })}>
-          ЗАВЕРШИТЬ ХОД
-        </GameButton>
-      )}
-      {(canB || canS || canM || canU) && (
-        <div className="row wrap" style={{ gap: '0.6rem' }}>
+          <GameButton size="sm" color="purple" icon="briefcase" badge={ownedCells(s, me!.id).length || undefined} onClick={() => store().set({ dialog: 'props', propsMode: 'all', propsOwner: me!.id })}>
+            ИМУЩЕСТВО
+          </GameButton>
           {canB && (
-            <GameButton color="blue" icon="hammer" onClick={() => open('build')}>
+            <GameButton size="sm" color="blue" icon="hammer" onClick={() => open('build')}>
               ПОСТРОИТЬ
             </GameButton>
           )}
           {canS && (
-            <GameButton color="pink" icon="sell" onClick={() => open('sell')}>
+            <GameButton size="sm" color="pink" icon="sell" onClick={() => open('sell')}>
               ПРОДАТЬ
             </GameButton>
           )}
           {canM && (
-            <GameButton color="purple" icon="lock" onClick={() => open('mortgage')}>
+            <GameButton size="sm" color="dark" icon="lock" onClick={() => open('mortgage')}>
               ЗАЛОЖИТЬ
             </GameButton>
           )}
           {canU && (
-            <GameButton color="teal" icon="unlock" onClick={() => open('unmortgage')}>
+            <GameButton size="sm" color="teal" icon="unlock" onClick={() => open('unmortgage')}>
               ВЫКУПИТЬ
             </GameButton>
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-export function SideActions() {
-  const { s, me } = useGame();
-  if (!me || me.bankrupt || s.phase === 'gameOver') return null;
-  const outgoing = s.trades.filter((t) => t.status === 'pending' && t.from === me.id).length;
-  return (
-    <div className="side-actions">
-      {s.settings.rules.trading && (
-        <GameButton color="orange" icon="handshake" badge={outgoing || undefined} onClick={() => store().set({ dialog: 'trade', tradeDraft: null })}>
-          ТОРГОВЛЯ
-        </GameButton>
-      )}
-      <GameButton color="purple" icon="briefcase" badge={ownedCells(s, me.id).length || undefined} onClick={() => store().set({ dialog: 'props', propsMode: 'all', propsOwner: me.id })}>
-        МОЯ НЕДВИЖИМОСТЬ
-      </GameButton>
+      {primary && <div className="dock__row dock__primary">{primary}</div>}
     </div>
   );
 }
@@ -228,17 +240,31 @@ const EMOTES = ['👍', '😂', '😮', '😡', '🎉', '💸'];
 export function TopRight() {
   const mode = useStore((x) => x.mode);
   const prefs = useStore((x) => x.prefs);
+  const [emotes, setEmotes] = useState(false);
   return (
     <div className="top-right">
       {mode === 'net' && (
-        <div className="row emote-bar" style={{ gap: '0.25rem', background: 'rgba(25,10,90,.7)', borderRadius: '2rem', padding: '0.25rem 0.4rem' }}>
-          {EMOTES.map((e) => (
-            <button key={e} className="chip-btn" style={{ padding: '0.25em 0.4em', fontSize: '1.1rem', background: 'transparent', boxShadow: 'none' }} onClick={() => net.send({ t: 'emote', emote: e })}>
-              {e}
-            </button>
-          ))}
+        <div className="emote-wrap">
+          <GameButton round color="pink" icon="chat" title="Эмоции" onClick={() => setEmotes(!emotes)} />
+          {emotes && (
+            <div className="emote-pop">
+              {EMOTES.map((e) => (
+                <button
+                  key={e}
+                  className="emote-btn"
+                  onClick={() => {
+                    net.send({ t: 'emote', emote: e });
+                    setEmotes(false);
+                  }}
+                >
+                  {e}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
+      <GameButton round color="teal" icon={prefs.view === '2d' ? 'cube' : 'map'} title={prefs.view === '2d' ? 'Объёмный вид (3D)' : 'Вид сверху (2D)'} onClick={() => store().setPrefs({ view: prefs.view === '2d' ? '3d' : '2d' })} />
       <GameButton round color="dark" icon="scroll" title="Журнал ходов" onClick={() => store().setPrefs({ showLog: !prefs.showLog })} />
       <GameButton round color="dark" icon="eye" title="Обзор поля" onClick={() => getScene()?.overview()} />
       <GameButton round color="purple" icon="menu" title="Меню" onClick={() => store().set({ dialog: 'pause' })} />

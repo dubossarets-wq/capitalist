@@ -14,6 +14,8 @@ export interface Prefs {
   cameraFollow: boolean;
   menuTheme: ThemeId;
   showLog: boolean;
+  /** Вид поля в игре: объёмный или плоский сверху */
+  view: '3d' | '2d';
 }
 
 export interface Toast {
@@ -127,7 +129,7 @@ export function detectQuality(): Quality {
 
 const defaultPrefs = (): Prefs => {
   const quality = detectQuality();
-  return { sfx: 0.7, music: 0.3, quality, anim: quality === 'low' ? 'fast' : 'full', cameraFollow: true, menuTheme: 'classic', showLog: true };
+  return { sfx: 0.7, music: 0.3, quality, anim: quality === 'low' ? 'fast' : 'full', cameraFollow: true, menuTheme: 'classic', showLog: true, view: '3d' };
 };
 
 let toastSeq = 0;
