@@ -15,8 +15,16 @@ run(`npx vite build --outDir dist-pages --emptyOutDir`, {
 });
 fs.writeFileSync(path.join(out, '.nojekyll'), '');
 
-const email = execSync('git config user.email').toString().trim();
-const user = execSync('git config user.name').toString().trim();
+const cfg = (key, def) => {
+  try {
+    return execSync(`git config ${key}`).toString().trim() || def;
+  } catch {
+    return def;
+  }
+};
+const owner = repo.split('/')[0];
+const user = cfg('user.name', owner);
+const email = cfg('user.email', `${owner}@users.noreply.github.com`);
 run('git init -q -b gh-pages', { cwd: out });
 run(`git -c user.name="${user}" -c user.email="${email}" add -A`, { cwd: out });
 run(`git -c user.name="${user}" -c user.email="${email}" commit -q -m "Deploy web version"`, { cwd: out });
