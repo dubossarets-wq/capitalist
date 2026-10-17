@@ -19,43 +19,52 @@ export function boardSize(n: number) {
   return 2 * CORNER + (s - 1) * CELL_W;
 }
 
-export function computeLayout(n: number): CellPlace[] {
+/** Размеры поля: ширина (x) и высота (z). k — во сколько раз вытянуты клетки левого и правого рядов */
+export function boardDims(n: number, k = 1) {
   const s = n / 4;
-  const L = boardSize(n);
-  const h = L / 2;
+  return { W: 2 * CORNER + (s - 1) * CELL_W, H: 2 * CORNER + (s - 1) * CELL_W * k };
+}
+
+export function computeLayout(n: number, k = 1): CellPlace[] {
+  const s = n / 4;
+  const { W, H } = boardDims(n, k);
+  const hw = W / 2;
+  const hh = H / 2;
   const c = CORNER;
   const out: CellPlace[] = [];
   for (let i = 0; i < n; i++) {
     const side = Math.floor(i / s);
-    const k = i % s;
+    const j = i % s;
     const rot = [0, -Math.PI / 2, Math.PI, Math.PI / 2][side];
-    if (k === 0) {
+    if (j === 0) {
       const pos = [
-        [h - c / 2, h - c / 2],
-        [-h + c / 2, h - c / 2],
-        [-h + c / 2, -h + c / 2],
-        [h - c / 2, -h + c / 2],
+        [hw - c / 2, hh - c / 2],
+        [-hw + c / 2, hh - c / 2],
+        [-hw + c / 2, -hh + c / 2],
+        [hw - c / 2, -hh + c / 2],
       ][side];
       out.push({ x: pos[0], z: pos[1], rot, w: c, d: c, corner: true, side });
       continue;
     }
-    const off = c + (k - 0.5) * CELL_W;
+    const vertical = side % 2 === 1;
+    const len = vertical ? CELL_W * k : CELL_W;
+    const off = c + (j - 0.5) * len;
     let x = 0;
     let z = 0;
     if (side === 0) {
-      x = h - off;
-      z = h - c / 2;
+      x = hw - off;
+      z = hh - c / 2;
     } else if (side === 1) {
-      x = -h + c / 2;
-      z = h - off;
+      x = -hw + c / 2;
+      z = hh - off;
     } else if (side === 2) {
-      x = -h + off;
-      z = -h + c / 2;
+      x = -hw + off;
+      z = -hh + c / 2;
     } else {
-      x = h - c / 2;
-      z = -h + off;
+      x = hw - c / 2;
+      z = -hh + off;
     }
-    out.push({ x, z, rot, w: CELL_W, d: CELL_D, corner: false, side });
+    out.push({ x, z, rot, w: len, d: CELL_D, corner: false, side });
   }
   return out;
 }

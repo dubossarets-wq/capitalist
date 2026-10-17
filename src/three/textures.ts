@@ -44,10 +44,10 @@ function shade(hex: string, k: number) {
 }
 export { shade };
 
-/** Перенос текста по словам с подбором размера шрифта */
-function fitText(ctx: CanvasRenderingContext2D, text: string, maxW: number, maxLines: number, size: number, font: string, minSize = 16) {
-  for (let s = size; s >= minSize; s -= 2) {
-    ctx.font = `${font.startsWith('700') || font.startsWith('900') ? '' : '700 '}${s}px ${font}`;
+/** Перенос текста по словам с подбором размера шрифта: помещается и по ширине, и по высоте */
+function fitText(ctx: CanvasRenderingContext2D, text: string, maxW: number, maxLines: number, size: number, font: string, minSize = 16, maxH = Infinity, weight = 700) {
+  for (let s = size; s >= minSize; s -= 1) {
+    ctx.font = `${weight} ${s}px ${font}`;
     const words = text.split(/\s+/);
     const lines: string[] = [];
     let cur = '';
@@ -60,16 +60,18 @@ function fitText(ctx: CanvasRenderingContext2D, text: string, maxW: number, maxL
       }
     }
     if (cur) lines.push(cur);
-    if (lines.length <= maxLines && lines.every((l) => ctx.measureText(l).width <= maxW)) return { lines, size: s };
+    if (lines.length <= maxLines && lines.length * s * 1.08 <= maxH && lines.every((l) => ctx.measureText(l).width <= maxW)) return { lines, size: s };
   }
-  ctx.font = `700 ${minSize}px ${font}`;
-  return { lines: [text], size: minSize };
+  // Не поместилось даже минимальным размером — по словам, а при отрисовке текст сожмётся по ширине
+  ctx.font = `${weight} ${minSize}px ${font}`;
+  return { lines: text.split(/\s+/).slice(0, maxLines), size: minSize };
 }
 
-function drawLines(ctx: CanvasRenderingContext2D, lines: string[], cx: number, cy: number, size: number) {
+function drawLines(ctx: CanvasRenderingContext2D, lines: string[], cx: number, cy: number, size: number, maxW?: number) {
   const lh = size * 1.08;
   const y0 = cy - ((lines.length - 1) * lh) / 2;
-  lines.forEach((l, i) => ctx.fillText(l, cx, y0 + i * lh));
+  // maxWidth гарантирует, что строка не выйдет за край клетки
+  lines.forEach((l, i) => (maxW ? ctx.fillText(l, cx, y0 + i * lh, maxW) : ctx.fillText(l, cx, y0 + i * lh)));
 }
 
 // ───────────── Иконки клеток ─────────────
@@ -500,14 +502,14 @@ function applySide(ctx: CanvasRenderingContext2D, side: number, cw: number, ch: 
 }
 
 /** Положение ценника относительно центра клетки в мировых координатах (x — вправо, z — вниз), единицы поля */
-export function tagOffset(side: number): [number, number] {
+export function tagOffset(side: number, len = 1): [number, number] {
   switch (side) {
     case 1:
-      return [-0.1875, 0.332];
+      return [-0.1875, len / 2 - 0.168];
     case 2:
       return [0, -0.57];
     case 3:
-      return [0.1875, 0.332];
+      return [0.1875, len / 2 - 0.168];
     default:
       return [0, 0.57];
   }
@@ -520,8 +522,9 @@ interface Rect {
   h: number;
 }
 
-export function cellTexture(board: BoardDef, cell: CellDef, theme: ThemeDef, side = 0, scale = 1): THREE.Texture {
-  const CW = CELL_PX_W;
+export function cellTexture(board: BoardDef, cell: CellDef, theme: ThemeDef, side = 0, scale = 1, len = 1): THREE.Texture {
+  // len — длина клетки вдоль своей стороны (боковые ряды в 2D могут быть вытянуты)
+  const CW = Math.round(CELL_PX_W * len);
   const CD = CELL_PX_D;
   const [c, ctx] = mk(Math.round(CW * scale), Math.round(CD * scale));
   ctx.scale(scale, scale);
@@ -567,11 +570,13 @@ export function cellTexture(board: BoardDef, cell: CellDef, theme: ThemeDef, sid
     else content = { ...content, h: content.h - T };
   }
 
-  const pad = 14;
+  const pad = 12;
+  // Названия — жирным начертанием (Black), максимально крупно в пределах клетки
   const nameIn = (r: Rect, size: number, maxLines: number) => {
-    const { lines, size: sz } = fitText(ctx, cell.name.toUpperCase(), r.w - pad * 2, maxLines, size, FONT_TEXT, 15);
+    const maxW = r.w - pad * 2;
+    const { lines, size: sz } = fitText(ctx, cell.name.toUpperCase(), maxW, maxLines, size, FONT_TEXT, 16, r.h - 10, 900);
     ctx.fillStyle = theme.cellText;
-    drawLines(ctx, lines, r.x + r.w / 2, r.y + r.h / 2, sz);
+    drawLines(ctx, lines, r.x + r.w / 2, r.y + r.h / 2, sz, maxW);
   };
   const titleIn = (text: string, r: Rect, size: number) => {
     ctx.fillStyle = theme.cellText;
@@ -582,7 +587,7 @@ export function cellTexture(board: BoardDef, cell: CellDef, theme: ThemeDef, sid
   };
   const withIcon = (draw: Draw, r: Rect, nameH: number, iconMax: number) => {
     // Название сверху, иконка — по центру оставшегося места
-    nameIn({ x: r.x, y: r.y + 6, w: r.w, h: nameH }, land ? 24 : 28, 2);
+    nameIn({ x: r.x, y: r.y + 6, w: r.w, h: nameH }, land ? 28 : 32, 2);
     const rest: Rect = { x: r.x, y: r.y + nameH + 6, w: r.w, h: r.h - nameH - 6 };
     const sz = Math.min(iconMax, rest.h * 0.86, rest.w * 0.7);
     draw(ctx, rest.x + rest.w / 2, rest.y + rest.h / 2, sz);
@@ -590,16 +595,17 @@ export function cellTexture(board: BoardDef, cell: CellDef, theme: ThemeDef, sid
 
   switch (cell.type) {
     case 'property':
-      nameIn(content, land ? 42 : 38, land ? 2 : 3);
+      // Верхний предел крупный — реальный размер ограничит ширина и высота клетки
+      nameIn(content, land ? 78 : 56, 3);
       break;
     case 'transport':
     case 'utility': {
       const draw = ICONS[cell.icon ?? (cell.type === 'transport' ? 'plane' : 'bolt')] ?? iconBolt;
-      withIcon(draw, content, land ? 62 : 92, 120);
+      withIcon(draw, content, land ? 70 : 96, 120);
       break;
     }
     case 'tax':
-      withIcon(iconTax, content, land ? 62 : 92, 110);
+      withIcon(iconTax, content, land ? 70 : 96, 110);
       break;
     case 'chance':
       titleIn('ШАНС', { x: content.x, y: content.y + 8, w: content.w, h: 52 }, 30);
@@ -749,15 +755,19 @@ export function makePriceCanvas(scale = 1) {
 
 // ───────────── Центр поля ─────────────
 
-export function centerTexture(theme: ThemeDef, boardName: string, scale = 1): THREE.Texture {
+export function centerTexture(theme: ThemeDef, boardName: string, scale = 1, aspect = 1): THREE.Texture {
+  // aspect — высота / ширина центра поля (в 2D поле может быть вытянуто)
   const S = 1024;
-  const [c, ctx] = mk(S * scale, S * scale);
+  const SH = Math.round(S * aspect);
+  const [c, ctx] = mk(S * scale, SH * scale);
   ctx.scale(scale, scale);
-  const g = ctx.createRadialGradient(S / 2, S / 2, 40, S / 2, S / 2, S * 0.72);
+  const g = ctx.createRadialGradient(S / 2, SH / 2, 40, S / 2, SH / 2, Math.max(S, SH) * 0.72);
   g.addColorStop(0, theme.center1);
   g.addColorStop(1, theme.center2);
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, S, S);
+  ctx.fillRect(0, 0, S, SH);
+  ctx.save();
+  ctx.translate(0, (SH - S) / 2);
 
   // Узор
   ctx.save();
@@ -843,6 +853,7 @@ export function centerTexture(theme: ThemeDef, boardName: string, scale = 1): TH
   ctx.font = `700 40px ${FONT_TEXT}`;
   ctx.fillStyle = 'rgba(255,255,255,0.92)';
   ctx.fillText(boardName.toUpperCase(), 0, 150);
+  ctx.restore();
   ctx.restore();
   return canvasTexture(c);
 }

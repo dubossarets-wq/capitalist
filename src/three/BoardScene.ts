@@ -5,7 +5,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type { BoardDef, DiceStyleId, ThemeId } from '../../shared/types';
 import { THEMES, type ThemeDef } from './themes';
-import { computeLayout, boardSize, tokenSlot, type CellPlace, CORNER } from './layout';
+import { computeLayout, boardDims, tokenSlot, type CellPlace, CORNER } from './layout';
 import {
   cellTexture,
   cornerTexture,
@@ -119,6 +119,13 @@ export class BoardScene {
   private stampTex: THREE.Texture | null = null;
   private down: { x: number; y: number; t: number } | null = null;
   private dirty = true;
+  /** Вытянутость боковых рядов (2D на вертикальном экране) и размеры поля */
+  private stretch = 1;
+  private BW = 12;
+  private BH = 12;
+  private lastBoard: { board: BoardDef; themeId: ThemeId; diceStyle: DiceStyleId; salary: number } | null = null;
+  private tagInfos: (TagInfo | undefined)[] = [];
+  private rebuildTimer: ReturnType<typeof setTimeout> | null = null;
   /** Камера 2D-режима: строго сверху, без перспективы */
   private ortho = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.5, 200);
   viewMode: '3d' | '2d' = '3d';
@@ -277,18 +284,28 @@ export class BoardScene {
     this.camera.aspect = w / h;
     this.applyViewOffset(w, h);
     this.fitOrtho();
+    if (this.viewMode === '2d') this.checkStretch();
   };
 
   // ───────────── Построение доски ─────────────
 
-  setBoard(board: BoardDef, themeId: ThemeId, diceStyle: DiceStyleId, salary: number) {
+  setBoard(board: BoardDef, themeId: ThemeId, diceStyle: DiceStyleId, salary: number, keep = false) {
     this.dirty = true;
     this.finishAll();
+    // При перестройке той же доски (смена вида, поворот экрана) запоминаем всё, что на ней стоит
+    const snap = keep ? this.snapshot() : null;
     this.clearBoard();
+    this.lastBoard = { board, themeId, diceStyle, salary };
     const theme = (this.theme = THEMES[themeId] ?? THEMES.classic);
     const n = board.cells.length;
-    this.layout = computeLayout(n);
-    const L = (this.L = boardSize(n));
+    this.stretch = this.desiredStretch(n);
+    this.layout = computeLayout(n, this.stretch);
+    const dims = boardDims(n, this.stretch);
+    this.BW = dims.W;
+    this.BH = dims.H;
+    const L = (this.L = Math.max(dims.W, dims.H));
+    const BW = dims.W;
+    const BH = dims.H;
     this.renderer.toneMappingExposure = theme.exposure;
     this.hemi.color.set(theme.hemiSky);
     this.hemi.groundColor.set(theme.hemiGround);
@@ -329,7 +346,7 @@ export class BoardScene {
     this.root.add(table);
     // Тень-подложка под доской
     const shadowBlob = new THREE.Mesh(
-      new THREE.PlaneGeometry(L * 1.25, L * 1.25),
+      new THREE.PlaneGeometry(BW * 1.25, BH * 1.25),
       new THREE.MeshBasicMaterial({ map: blobTexture(), transparent: true, depthWrite: false, opacity: 0.55 }),
     );
     shadowBlob.rotation.x = -Math.PI / 2;
@@ -339,39 +356,42 @@ export class BoardScene {
 
     // Основание доски
     const base = new THREE.Mesh(
-      new RoundedBoxGeometry(L + 0.6, BOARD_TOP, L + 0.6, 4, 0.16),
+      new RoundedBoxGeometry(BW + 0.6, BOARD_TOP, BH + 0.6, 4, 0.16),
       new THREE.MeshStandardMaterial({ color: theme.boardSide, roughness: 0.55, metalness: 0.05 }),
     );
     base.position.y = BOARD_TOP / 2;
     base.castShadow = true;
     base.receiveShadow = true;
     this.root.add(base);
-    const grout = new THREE.Mesh(new THREE.PlaneGeometry(L + 0.1, L + 0.1), decal(new THREE.MeshStandardMaterial({ color: theme.grout, roughness: 0.7 }), 1));
+    const grout = new THREE.Mesh(new THREE.PlaneGeometry(BW + 0.1, BH + 0.1), decal(new THREE.MeshStandardMaterial({ color: theme.grout, roughness: 0.7 }), 1));
     grout.rotation.x = -Math.PI / 2;
     grout.position.y = BOARD_TOP + 0.004;
     grout.receiveShadow = true;
     this.root.add(grout);
     // Золотая окантовка
     const rim = new THREE.Mesh(
-      new THREE.BoxGeometry(L + 0.34, 0.05, L + 0.34),
+      new THREE.BoxGeometry(BW + 0.34, 0.05, BH + 0.34),
       new THREE.MeshStandardMaterial({ color: theme.id === 'city' ? '#00e5ff' : '#ffcf40', metalness: 0.8, roughness: 0.3, emissive: theme.id === 'city' ? '#00a5bb' : '#000000', emissiveIntensity: 0.6 }),
     );
     rim.position.y = BOARD_TOP - 0.02;
     this.root.add(rim);
 
     // Центр поля
-    const inner = L - 2 * CORNER - 0.08;
-    const center = new THREE.Mesh(new THREE.PlaneGeometry(inner, inner), decal(new THREE.MeshStandardMaterial({ map: centerTexture(theme, board.name, this.texScale() > 1 ? 1.5 : 1), roughness: 0.6 }), 2));
+    const innerW = BW - 2 * CORNER - 0.08;
+    const innerH = BH - 2 * CORNER - 0.08;
+    const center = new THREE.Mesh(
+      new THREE.PlaneGeometry(innerW, innerH),
+      decal(new THREE.MeshStandardMaterial({ map: centerTexture(theme, board.name, this.texScale() > 1 ? 1.5 : 1, innerH / innerW), roughness: 0.6 }), 2),
+    );
     center.rotation.x = -Math.PI / 2;
     center.position.y = BOARD_TOP + 0.01;
     center.receiveShadow = true;
     this.root.add(center);
 
     // Колоды карточек
-    const deckOff = inner * 0.27;
     for (const [kind, x, z] of [
-      ['chance', -deckOff, -deckOff],
-      ['chest', deckOff, deckOff],
+      ['chance', -innerW * 0.27, -innerH * 0.27],
+      ['chest', innerW * 0.27, innerH * 0.27],
     ] as const) {
       const side = new THREE.MeshStandardMaterial({ color: '#fafafa', roughness: 0.6 });
       const top = new THREE.MeshStandardMaterial({ map: deckTexture(kind), roughness: 0.45 });
@@ -390,9 +410,10 @@ export class BoardScene {
     this.stamps = [];
     this.houses = [];
     this.houseCount = [];
+    if (!keep) this.tagInfos = [];
     board.cells.forEach((cell, i) => {
       const p = this.layout[i];
-      const tex = p.corner ? cornerTexture(cell, theme, salary, p.side, this.texScale()) : cellTexture(board, cell, theme, p.side, this.texScale());
+      const tex = p.corner ? cornerTexture(cell, theme, salary, p.side, this.texScale()) : cellTexture(board, cell, theme, p.side, this.texScale(), p.w);
       const top = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.55 });
       const m = new THREE.Mesh(new THREE.BoxGeometry(p.w - 0.05, CELL_H, p.d - 0.05), [sideMat, sideMat, top, sideMat, sideMat, sideMat]);
       m.position.set(p.x, BOARD_TOP + CELL_H / 2, p.z);
@@ -411,7 +432,7 @@ export class BoardScene {
         const ttex = canvasTexture(canvas);
         const tag = new THREE.Mesh(new THREE.PlaneGeometry(0.86, 0.3), decal(new THREE.MeshStandardMaterial({ map: ttex, transparent: true, roughness: 0.4 }), 3));
         // Ценник лежит горизонтально для игрока снизу, независимо от стороны поля
-        const [wx, wz] = tagOffset(p.side);
+        const [wx, wz] = tagOffset(p.side, p.w);
         const [lx, lz] = toLocal(p.rot, wx, wz);
         tag.rotation.set(-Math.PI / 2, 0, -p.rot);
         tag.position.set(lx, CELL_H / 2 + 0.012, lz);
@@ -432,8 +453,64 @@ export class BoardScene {
     this.root.add(this.decor.group);
 
     if (this.decor) this.decor.group.visible = this.viewMode === '3d';
+    if (snap) this.restore(snap);
     this.fitOrtho();
     this.overview(true);
+  }
+
+  /** Что сейчас стоит на доске (для перестройки без потерь) */
+  private snapshot() {
+    return {
+      tags: [...this.tagInfos],
+      houses: [...this.houseCount],
+      mortgaged: this.stamps.map((x) => !!x),
+      tokens: [...this.tokens.values()].map((t) => ({ id: t.id, key: t.obj.userData.key as string, cell: t.cell, inJail: t.inJail, hidden: t.hidden })),
+      active: this.activeId,
+      activeColor: '#' + (this.activeRing.material as THREE.MeshBasicMaterial).color.getHexString(),
+    };
+  }
+
+  private restore(snap: ReturnType<BoardScene['snapshot']>) {
+    this.setPlayers(snap.tokens.map((t) => ({ id: t.id, token: t.key.split('|')[0], color: t.key.split('|')[1] })));
+    for (const t of snap.tokens) this.placeToken(t.id, t.cell, t.inJail, t.hidden);
+    this.relayout(true);
+    snap.tags.forEach((info, i) => info && this.setTag(i, info));
+    snap.houses.forEach((h, i) => h && void this.setHouses(i, h, false));
+    snap.mortgaged.forEach((m, i) => m && this.setMortgaged(i, true));
+    this.setActive(snap.active, snap.activeColor);
+  }
+
+  /**
+   * В 2D на вертикальном экране поле вытягивается по высоте (длиннее левый и правый ряды),
+   * чтобы занять свободную высоту и стать крупнее.
+   */
+  private desiredStretch(n: number) {
+    if (this.viewMode !== '2d' || this.menuMode) return 1;
+    const w = this.container.clientWidth || window.innerWidth;
+    const h = this.container.clientHeight || window.innerHeight;
+    const availW = Math.max(120, w - 16);
+    const availH = Math.max(120, h - this.safe.top - this.safe.bottom);
+    const a = availW / availH;
+    if (a >= 0.92) return 1;
+    const s = n / 4;
+    const W = 2 * CORNER + (s - 1);
+    const k = ((W / a) * 0.98 - 2 * CORNER) / (s - 1);
+    return k < 1.08 ? 1 : Math.min(1.7, Math.round(k * 20) / 20);
+  }
+
+  /** Перестроить доску, если нужная вытянутость изменилась (смена вида, поворот экрана) */
+  private checkStretch(immediate = false) {
+    if (!this.lastBoard) return;
+    const want = this.desiredStretch(this.lastBoard.board.cells.length);
+    if (Math.abs(want - this.stretch) < 0.04) return;
+    if (this.rebuildTimer) clearTimeout(this.rebuildTimer);
+    const run = () => {
+      this.rebuildTimer = null;
+      const lb = this.lastBoard;
+      if (lb) this.setBoard(lb.board, lb.themeId, lb.diceStyle, lb.salary, true);
+    };
+    if (immediate) run();
+    else this.rebuildTimer = setTimeout(run, 250);
   }
 
   // ───────────── 2D / 3D ─────────────
@@ -452,6 +529,7 @@ export class BoardScene {
     for (const t of this.tokens.values()) this.applyTokenView(t);
     this.fitOrtho();
     this.overview(true);
+    this.checkStretch(true);
   }
 
   private applyTokenView(t: TokenView) {
@@ -466,8 +544,7 @@ export class BoardScene {
     const w = this.container.clientWidth || window.innerWidth;
     const h = this.container.clientHeight || window.innerHeight;
     const availH = Math.max(120, h - this.safe.top - this.safe.bottom);
-    const size = this.L * 1.04;
-    const perPx = Math.max(size / availH, size / Math.max(120, w - 16));
+    const perPx = Math.max((this.BH * 1.04) / availH, (this.BW * 1.04) / Math.max(120, w - 16));
     this.ortho.left = (-w / 2) * perPx;
     this.ortho.right = (w / 2) * perPx;
     this.ortho.top = (h / 2) * perPx;
@@ -493,6 +570,7 @@ export class BoardScene {
     this.safe = { top: t, bottom: b };
     this.resize();
     if (this.viewMode === '2d' && !this.menuMode) this.overview(true);
+    this.checkStretch();
   }
 
   private clearBoard() {
@@ -556,6 +634,7 @@ export class BoardScene {
 
   setTag(i: number, info: TagInfo) {
     this.dirty = true;
+    this.tagInfos[i] = info;
     const t = this.tags[i];
     if (!t) return;
     const key = `${info.text}|${info.bg}|${info.fg}|${info.mortgaged}`;
@@ -835,7 +914,7 @@ export class BoardScene {
 
   async rollDice(d1: number, d2: number): Promise<void> {
     if (this.dice.length < 2) return;
-    const inner = this.L - 2 * CORNER;
+    const inner = Math.min(this.BW, this.BH) - 2 * CORNER;
     const restY = BOARD_TOP + DIE / 2 + 0.006;
     const camDir = new THREE.Vector3().subVectors(this.activeCamera.position, this.controls.target).setY(0);
     if (camDir.lengthSq() < 1e-8) camDir.set(0, 0, 1);

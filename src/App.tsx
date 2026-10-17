@@ -32,7 +32,7 @@ export function App() {
     if (!host.current) return;
     let cancelled = false;
     const fontsReady = Promise.race([
-      Promise.all([document.fonts.load('400 40px "Russo One"'), document.fonts.load('700 40px Rubik'), document.fonts.load('400 40px Rubik')]),
+      Promise.all([document.fonts.load('400 40px "Russo One"'), document.fonts.load('700 40px Rubik'), document.fonts.load('900 40px Rubik'), document.fonts.load('400 40px Rubik')]),
       new Promise((r) => setTimeout(r, 2500)),
     ]);
     fontsReady.then(() => {
