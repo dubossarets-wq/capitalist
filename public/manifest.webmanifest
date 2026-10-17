@@ -1,0 +1,17 @@
+{
+  "name": "Капиталист — империя на кубиках",
+  "short_name": "Капиталист",
+  "description": "3D-игра о недвижимости: боты, торговля, аукционы и игра по Wi-Fi",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#120f45",
+  "theme_color": "#23338f",
+  "lang": "ru",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

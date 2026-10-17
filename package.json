@@ -1,0 +1,43 @@
+{
+  "name": "capitalist-fortune",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "КАПИТАЛИСТ — 3D-игра в жанре «Монополии» с ботами и игрой по локальной Wi-Fi сети",
+  "scripts": {
+    "dev": "vite --host",
+    "server": "tsx server/index.ts",
+    "build": "tsc --noEmit && vite build",
+    "start": "vite build && tsx server/index.ts",
+    "serve": "tsx server/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx tests/simulate.ts && tsx tests/network.ts",
+    "test:ui": "tsx tests/ui.ts",
+    "test:all": "tsx tests/simulate.ts && tsx tests/network.ts && vite build && tsx tests/ui.ts",
+    "deploy:pages": "node scripts/deploy-pages.mjs"
+  },
+  "dependencies": {
+    "@fontsource/rubik": "^5.1.0",
+    "@fontsource/russo-one": "^5.1.0",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "^0.169.0",
+    "tsx": "^4.19.2",
+    "ws": "^8.18.0",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/three": "^0.169.0",
+    "@types/ws": "^8.5.13",
+    "@vitejs/plugin-react": "^4.3.3",
+    "playwright-core": "^1.64.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}
