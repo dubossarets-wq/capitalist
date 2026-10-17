@@ -116,6 +116,8 @@ export class BoardScene {
   private stampTex: THREE.Texture | null = null;
   private down: { x: number; y: number; t: number } | null = null;
   private dirty = true;
+  /** Снижение разрешения, если устройство не тянет даже низкое качество */
+  private resScale = 1;
   private lastRender = 0;
   private perf = { sum: 0, n: 0, quietUntil: 0 };
   speed = 1;
@@ -223,7 +225,10 @@ export class BoardScene {
     this.dirty = true;
     const q = this.quality;
     const dpr = window.devicePixelRatio || 1;
-    this.renderer.setPixelRatio(q === 'low' ? Math.min(1, dpr) : q === 'medium' ? Math.min(1.5, dpr) : Math.min(2, dpr));
+    // Чёткость важнее всего: даже на низком качестве рисуем минимум в 2× на экранах высокой плотности.
+    // В простое кадры не рисуются, так что это не нагружает устройство.
+    const cap = q === 'high' ? 3 : 2;
+    this.renderer.setPixelRatio(Math.max(1, Math.min(cap, dpr) * this.resScale));
     this.renderer.shadowMap.enabled = q !== 'low';
     this.sun.castShadow = q !== 'low';
     const size = q === 'high' ? 2048 : 1024;
@@ -241,6 +246,12 @@ export class BoardScene {
 
   invalidate() {
     this.dirty = true;
+  }
+
+  /** Масштаб текстур клеток: на экранах высокой плотности — крупнее, чтобы надписи были чёткими */
+  private texScale() {
+    const dpr = window.devicePixelRatio || 1;
+    return dpr >= 1.75 ? 1.5 : dpr > 1.2 ? 1.25 : 1;
   }
 
   private resize = () => {
@@ -283,7 +294,7 @@ export class BoardScene {
 
     // Стол с мягким затуханием к краям
     const tableR = L * 2.6;
-    const tex = tableTexture(theme, this.quality === 'low' ? 0.5 : 1);
+    const tex = tableTexture(theme);
     tex.repeat.set(5, 5);
     const fade = document.createElement('canvas');
     fade.width = fade.height = 256;
@@ -334,7 +345,7 @@ export class BoardScene {
 
     // Центр поля
     const inner = L - 2 * CORNER - 0.08;
-    const center = new THREE.Mesh(new THREE.PlaneGeometry(inner, inner), new THREE.MeshStandardMaterial({ map: centerTexture(theme, board.name, this.quality === 'low' ? 0.5 : 1), roughness: 0.6 }));
+    const center = new THREE.Mesh(new THREE.PlaneGeometry(inner, inner), new THREE.MeshStandardMaterial({ map: centerTexture(theme, board.name, this.texScale() > 1 ? 1.5 : 1), roughness: 0.6 }));
     center.rotation.x = -Math.PI / 2;
     center.position.y = BOARD_TOP + 0.006;
     center.receiveShadow = true;
@@ -365,7 +376,7 @@ export class BoardScene {
     this.houseCount = [];
     board.cells.forEach((cell, i) => {
       const p = this.layout[i];
-      const tex = p.corner ? cornerTexture(cell, theme, salary) : cellTexture(board, cell, theme);
+      const tex = p.corner ? cornerTexture(cell, theme, salary, this.texScale()) : cellTexture(board, cell, theme, this.texScale());
       const top = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.55 });
       const m = new THREE.Mesh(new THREE.BoxGeometry(p.w - 0.05, CELL_H, p.d - 0.05), [sideMat, sideMat, top, sideMat, sideMat, sideMat]);
       m.position.set(p.x, BOARD_TOP + CELL_H / 2, p.z);
@@ -380,7 +391,7 @@ export class BoardScene {
       this.houseCount.push(0);
       const hasTag = cell.type === 'property' || cell.type === 'transport' || cell.type === 'utility' || cell.type === 'tax';
       if (hasTag && !p.corner) {
-        const canvas = makePriceCanvas();
+        const canvas = makePriceCanvas(this.texScale());
         const ttex = canvasTexture(canvas);
         const tag = new THREE.Mesh(new THREE.PlaneGeometry(0.86, 0.3), new THREE.MeshStandardMaterial({ map: ttex, transparent: true, roughness: 0.4 }));
         tag.rotation.x = -Math.PI / 2;
@@ -1205,9 +1216,14 @@ export class BoardScene {
         const avg = this.perf.sum / this.perf.n;
         this.perf.sum = 0;
         this.perf.n = 0;
-        if (avg > (this.quality === 'low' ? 1000 : 48)) {
+        if (avg > 48) {
           this.perf.quietUntil = now + 15000;
-          this.onSlow?.();
+          if (this.quality !== 'low') this.onSlow?.();
+          else if (this.resScale > 0.6) {
+            // Уже низкое качество — плавно уменьшаем разрешение (но не ниже 1×)
+            this.resScale -= 0.2;
+            this.applyQuality();
+          }
         }
       }
     }

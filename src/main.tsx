@@ -8,6 +8,9 @@ import '@fontsource/russo-one/latin-400.css';
 import './styles/game.css';
 import { App } from './App';
 
+// Запуск с ярлыка на экране «Домой» iPhone/iPad
+if ((navigator as any).standalone) document.documentElement.classList.add('ios-standalone');
+
 createRoot(document.getElementById('root')!).render(<App />);
 
 // Установка как приложения (работает на localhost и по HTTPS; по IP-адресу браузеры

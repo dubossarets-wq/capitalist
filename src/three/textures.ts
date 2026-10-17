@@ -487,8 +487,9 @@ const ICONS: Record<string, Draw> = {
 const CELL_PX_W = 256;
 const CELL_PX_D = 410;
 
-export function cellTexture(board: BoardDef, cell: CellDef, theme: ThemeDef): THREE.Texture {
-  const [c, ctx] = mk(CELL_PX_W, CELL_PX_D);
+export function cellTexture(board: BoardDef, cell: CellDef, theme: ThemeDef, scale = 1): THREE.Texture {
+  const [c, ctx] = mk(Math.round(CELL_PX_W * scale), Math.round(CELL_PX_D * scale));
+  ctx.scale(scale, scale);
   const W = CELL_PX_W;
   const H = CELL_PX_D;
   const bg = ctx.createLinearGradient(0, 0, 0, H);
@@ -567,9 +568,10 @@ export function cellTexture(board: BoardDef, cell: CellDef, theme: ThemeDef): TH
   return canvasTexture(c);
 }
 
-export function cornerTexture(cell: CellDef, theme: ThemeDef, salary: number): THREE.Texture {
+export function cornerTexture(cell: CellDef, theme: ThemeDef, salary: number, scale = 1): THREE.Texture {
   const S = 410;
-  const [c, ctx] = mk(S, S);
+  const [c, ctx] = mk(Math.round(S * scale), Math.round(S * scale));
+  ctx.scale(scale, scale);
   const bg = ctx.createRadialGradient(S / 2, S / 2, 20, S / 2, S / 2, S * 0.75);
   bg.addColorStop(0, theme.cornerBg);
   bg.addColorStop(1, theme.cornerBg2);
@@ -651,9 +653,13 @@ export function cornerTexture(cell: CellDef, theme: ThemeDef, salary: number): T
 /** Ценник на клетке: цена (свободна), аренда в цвете владельца или пометка «залог» */
 export function drawPriceTag(canvas: HTMLCanvasElement, text: string, bg: string, fg: string, mortgaged: boolean) {
   const ctx = canvas.getContext('2d')!;
-  const W = canvas.width;
-  const H = canvas.height;
-  ctx.clearRect(0, 0, W, H);
+  // Холст может быть увеличен для экранов высокой плотности — рисуем в логических 256×88
+  const k = canvas.width / 256;
+  const W = 256;
+  const H = 88;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(k, 0, 0, k, 0, 0);
   const g = ctx.createLinearGradient(0, 0, 0, H);
   g.addColorStop(0, shade(bg, 0.18));
   g.addColorStop(1, shade(bg, -0.1));
@@ -677,8 +683,8 @@ export function drawPriceTag(canvas: HTMLCanvasElement, text: string, bg: string
   ctx.fillText(text, W / 2, H / 2 + 3);
 }
 
-export function makePriceCanvas() {
-  const [c] = mk(256, 88);
+export function makePriceCanvas(scale = 1) {
+  const [c] = mk(Math.round(256 * scale), Math.round(88 * scale));
   return c;
 }
 
